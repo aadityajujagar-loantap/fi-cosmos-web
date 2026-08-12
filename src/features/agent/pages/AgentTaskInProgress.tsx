@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import type { Step } from "../../../types";
 import { OpenStreetMap } from "../components/OpenStreetMap";
 import { routeUrl } from "../utils/map";
+import { getActiveAgentTask, updateAgentTask, type AgentTaskRecord } from "../utils/tasks";
 
 interface ChecklistRowProps {
   label: string;
@@ -53,10 +54,11 @@ interface AgentTaskInProgressProps {
 }
 
 export function AgentTaskInProgress({ onBack, onNavigate, completedStepsCount = 2 }: AgentTaskInProgressProps) {
+  const [task, setTask] = useState<AgentTaskRecord>(() => getActiveAgentTask());
   // Start stopwatch at 5 minutes 24 seconds as shown in the picture
   const [seconds, setSeconds] = useState(5 * 60 + 24);
   const [isCheckedIn, setIsCheckedIn] = useState(() => {
-    return localStorage.getItem("task_checked_in_T123456") === "true";
+    return localStorage.getItem(`task_checked_in_${getActiveAgentTask().id}`) === "true";
   });
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [popupMsg, setPopupMsg] = useState("");
@@ -73,10 +75,19 @@ export function AgentTaskInProgress({ onBack, onNavigate, completedStepsCount = 
     setTimeout(() => {
       setIsCheckingIn(false);
       setIsCheckedIn(true);
-      localStorage.setItem("task_checked_in_T123456", "true");
+      localStorage.setItem(`task_checked_in_${task.id}`, "true");
+      const updated = updateAgentTask(task.id, { action: "filled", status: "In Progress" });
+      if (updated) setTask(updated);
       setPopupMsg("Check-In Successful! Geo-Fence Verified.");
       setTimeout(() => setPopupMsg(""), 2000);
     }, 1200);
+  };
+
+  const handleCompleteTask = () => {
+    const updated = updateAgentTask(task.id, { action: "outline", status: "Completed" });
+    if (updated) setTask(updated);
+    setPopupMsg("Task completed successfully.");
+    setTimeout(() => onNavigate?.("history"), 900);
   };
 
   const formatTime = (totalSec: number) => {
@@ -107,7 +118,7 @@ export function AgentTaskInProgress({ onBack, onNavigate, completedStepsCount = 
         </div>
       )}
 
-      <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-4 justify-start relative h-full overflow-hidden">
+      <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-[max(16px,env(safe-area-inset-bottom))] justify-start h-full min-h-0 overflow-hidden">
         
         {/* Header */}
         <header className="relative flex items-center justify-center h-12 w-full flex-none">
@@ -136,15 +147,15 @@ export function AgentTaskInProgress({ onBack, onNavigate, completedStepsCount = 
         </header>
 
         {/* Scrollable container */}
-        <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full mt-2 flex flex-col gap-4 pb-16">
+        <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full mt-2 flex flex-col gap-4 pb-4">
           
           {/* Running Timer Card */}
           <div className="flex items-center justify-between border border-[#e6ebf1] rounded-[18px] bg-slate-50/50 p-4 shadow-sm w-full flex-none text-left">
             <div className="flex flex-col">
               <span className="bg-[#edf5ff] text-[#1158d4] font-bold text-[9px] px-1.5 py-0.5 rounded w-max">
-                IN PROGRESS
+                {task.status.toUpperCase()}
               </span>
-              <span className="text-[11px] font-bold text-[#5c6a85] mt-1.5">Started at 10:25 AM</span>
+              <span className="text-[11px] font-bold text-[#5c6a85] mt-1.5">{task.title} . #{task.id}</span>
             </div>
             
             <div className="flex items-center gap-1.5 text-lg font-bold text-[#1158d4]">
@@ -169,7 +180,15 @@ export function AgentTaskInProgress({ onBack, onNavigate, completedStepsCount = 
               </div>
             </div>
 
-            <OpenStreetMap className="h-[170px] w-full border-b border-[#edf1f5]" zoomSpan={0.012} />
+            <OpenStreetMap
+              className="h-[170px] w-full border-b border-[#edf1f5]"
+              destinationLabel={task.address}
+              latitude={task.latitude}
+              longitude={task.longitude}
+              markers={[{ id: task.id, label: task.title, latitude: task.latitude, longitude: task.longitude, priority: task.priority }]}
+              selectedMarkerId={task.id}
+              zoomSpan={0.012}
+            />
 
             {/* Location address row */}
             <div className="flex items-center justify-between gap-3 p-4 bg-white text-xs">
@@ -179,11 +198,11 @@ export function AgentTaskInProgress({ onBack, onNavigate, completedStepsCount = 
                   <circle cx="12" cy="9" r="2" />
                 </svg>
                 <p className="m-0 font-bold text-[#07183f] leading-snug">
-                  102, Sai Residency, Baner Road, Pune - 411045
+                  {task.address}
                 </p>
               </div>
               <button
-                onClick={() => window.open(routeUrl(), "_blank", "noopener,noreferrer")}
+                onClick={() => window.open(routeUrl(task.latitude, task.longitude), "_blank", "noopener,noreferrer")}
                 type="button"
                 className="flex items-center gap-0.5 text-xs font-bold text-[#1158d4] cursor-pointer hover:underline bg-transparent border-0"
               >
@@ -248,7 +267,7 @@ export function AgentTaskInProgress({ onBack, onNavigate, completedStepsCount = 
         </div>
 
         {/* Floating Footer Button */}
-        <div className="absolute bottom-4 left-5 right-5 z-20 w-[calc(100%-40px)] max-w-[390px] mx-auto flex flex-col flex-none">
+        <footer className="flex flex-col flex-none border-t border-[#eef2f6] bg-white pt-3">
           <div className="flex items-center justify-between w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-bold text-slate-600 mb-2 text-left">
             <span className="flex items-center gap-1.5">
               <span className={`w-2 h-2 rounded-full ${isCheckedIn ? "bg-emerald-500" : "bg-blue-500 animate-pulse"}`} />
@@ -258,18 +277,28 @@ export function AgentTaskInProgress({ onBack, onNavigate, completedStepsCount = 
           </div>
 
           {isCheckedIn ? (
-            <button
-              onClick={() => onNavigate?.("update-checklist")}
-              type="button"
-              className="w-full bg-[#1158d4] text-white hover:bg-[#0f4ebc] h-12 rounded-[14px] font-bold text-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg hover:scale-[1.01] active:scale-[0.99] transition-transform border-0"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-5 h-5">
-                <rect x="3" y="4" width="18" height="18" rx="2" />
-                <line x1="9" y1="9" x2="15" y2="9" />
-                <line x1="9" y1="13" x2="15" y2="13" />
-              </svg>
-              <span>Update Checklist</span>
-            </button>
+            completedStepsCount >= task.checklist.length ? (
+              <button
+                onClick={handleCompleteTask}
+                type="button"
+                className="w-full bg-[#088d27] text-white hover:bg-[#06751f] h-12 rounded-[14px] font-bold text-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg hover:scale-[1.01] active:scale-[0.99] transition-transform border-0"
+              >
+                <span>Complete Task</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => onNavigate?.("update-checklist")}
+                type="button"
+                className="w-full bg-[#1158d4] text-white hover:bg-[#0f4ebc] h-12 rounded-[14px] font-bold text-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg hover:scale-[1.01] active:scale-[0.99] transition-transform border-0"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-5 h-5">
+                  <rect x="3" y="4" width="18" height="18" rx="2" />
+                  <line x1="9" y1="9" x2="15" y2="9" />
+                  <line x1="9" y1="13" x2="15" y2="13" />
+                </svg>
+                <span>Update Checklist</span>
+              </button>
+            )
           ) : (
             <button
               onClick={handleCheckIn}
@@ -283,7 +312,7 @@ export function AgentTaskInProgress({ onBack, onNavigate, completedStepsCount = 
               <span>Check-In at Location</span>
             </button>
           )}
-        </div>
+        </footer>
 
       </div>
     </section>

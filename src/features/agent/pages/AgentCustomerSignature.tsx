@@ -1,4 +1,6 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
+import { saveSignatureDataUrl } from "../utils/media";
+import { getActiveAgentTask } from "../utils/tasks";
 
 
 interface AgentCustomerSignatureProps {
@@ -12,77 +14,35 @@ export function AgentCustomerSignature({
   completedStepsCount = 2,
   setCompletedStepsCount
 }: AgentCustomerSignatureProps) {
+  const [task] = useState(() => getActiveAgentTask());
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
-  const [hasSignature, setHasSignature] = useState(true);
+  const [hasSignature, setHasSignature] = useState(false);
+  const [signaturePreview, setSignaturePreview] = useState("");
+  const [error, setError] = useState("");
 
-  const drawPreloadedSignature = () => {
+  const clearCanvas = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    
-    // Clear and reset canvas scale
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.lineWidth = 2.5;
     ctx.lineCap = "round";
     ctx.strokeStyle = "#07183f";
-    
-    // Draw Amit Deshmukh mockup signature
-    ctx.beginPath();
-    
-    // 'A'
-    ctx.moveTo(50, 80);
-    ctx.lineTo(65, 30);
-    ctx.lineTo(80, 85);
-    ctx.moveTo(56, 58);
-    ctx.lineTo(73, 56);
-    
-    // cursive 'mit Deshmukh'
-    ctx.moveTo(80, 85);
-    ctx.bezierCurveTo(90, 50, 96, 55, 100, 80); // m
-    ctx.bezierCurveTo(104, 50, 110, 55, 114, 80);
-    ctx.bezierCurveTo(118, 50, 122, 55, 126, 80);
-    ctx.bezierCurveTo(134, 80, 138, 65, 138, 80); // i
-    ctx.bezierCurveTo(144, 80, 148, 45, 148, 80); // t
-    
-    // 'Deshmukh'
-    ctx.moveTo(165, 45);
-    ctx.bezierCurveTo(150, 45, 155, 80, 175, 80); // D
-    ctx.bezierCurveTo(182, 80, 185, 65, 188, 80); // e
-    ctx.bezierCurveTo(192, 65, 196, 65, 200, 80); // s
-    ctx.bezierCurveTo(204, 45, 208, 45, 208, 80); // h
-    ctx.bezierCurveTo(215, 65, 218, 65, 222, 80); // m
-    ctx.bezierCurveTo(226, 65, 230, 65, 234, 80); // u
-    ctx.bezierCurveTo(240, 65, 242, 45, 242, 80); // k
-    ctx.bezierCurveTo(246, 45, 250, 45, 250, 80); // h
-    
-    // Underline
-    ctx.moveTo(110, 95);
-    ctx.quadraticCurveTo(190, 75, 260, 78);
-    
-    // Dots
-    ctx.moveTo(242, 88);
-    ctx.arc(242, 88, 0.7, 0, 2 * Math.PI);
-    ctx.moveTo(252, 89);
-    ctx.arc(252, 89, 0.7, 0, 2 * Math.PI);
-
-    ctx.stroke();
-    setHasSignature(true);
   };
 
-  // Draw preloaded signature on mount
-  useEffect(() => {
-    drawPreloadedSignature();
-  }, []);
-
-  const handleClear = () => {
+  const updatePreview = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setSignaturePreview(canvas.toDataURL("image/png"));
+  };
+
+  const handleClear = () => {
+    clearCanvas();
     setHasSignature(false);
+    setSignaturePreview("");
+    setError("");
   };
 
   const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
@@ -106,6 +66,7 @@ export function AgentCustomerSignature({
     ctx.moveTo((clientX - rect.left) * scaleX, (clientY - rect.top) * scaleY);
     setIsDrawing(true);
     setHasSignature(true);
+    setError("");
   };
 
   const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
@@ -124,13 +85,21 @@ export function AgentCustomerSignature({
 
     ctx.lineTo((clientX - rect.left) * scaleX, (clientY - rect.top) * scaleY);
     ctx.stroke();
+    updatePreview();
   };
 
   const stopDrawing = () => {
     setIsDrawing(false);
+    if (hasSignature) updatePreview();
   };
 
   const handleUseSignature = () => {
+    const canvas = canvasRef.current;
+    if (!canvas || !hasSignature) {
+      setError("Please capture the customer's signature before continuing.");
+      return;
+    }
+    saveSignatureDataUrl(canvas.toDataURL("image/png"), task.id);
     if (setCompletedStepsCount && completedStepsCount < 5) {
       setCompletedStepsCount(5);
     }
@@ -139,7 +108,7 @@ export function AgentCustomerSignature({
 
   return (
     <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden">
-      <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-4 justify-start relative h-full overflow-hidden">
+      <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-[max(16px,env(safe-area-inset-bottom))] justify-start h-full min-h-0 overflow-hidden">
         
         {/* Header */}
         <header className="relative flex items-center justify-center h-12 w-full flex-none">
@@ -168,7 +137,7 @@ export function AgentCustomerSignature({
         </header>
 
         {/* Scrollable signature details */}
-        <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full mt-2 flex flex-col gap-4 pb-16">
+        <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full mt-2 flex flex-col gap-4 pb-4">
           
           {/* Top Info Banner */}
           <div className="flex items-start gap-2.5 w-full bg-[#f4f8ff] rounded-xl p-3 border border-[#d8e6ff] text-left flex-none">
@@ -196,7 +165,7 @@ export function AgentCustomerSignature({
                 </div>
                 <div className="min-w-0">
                   <p className="m-0 text-[9px] font-bold text-[#8f98a8]">Customer Name</p>
-                  <p className="m-0 font-bold text-[#07183f] truncate">Amit Deshmukh</p>
+                  <p className="m-0 font-bold text-[#07183f] truncate">{task.customer}</p>
                 </div>
               </div>
 
@@ -210,7 +179,7 @@ export function AgentCustomerSignature({
                 </div>
                 <div className="min-w-0">
                   <p className="m-0 text-[9px] font-bold text-[#8f98a8]">Mobile Number</p>
-                  <p className="m-0 font-bold text-[#07183f] truncate">+91 98765 43210</p>
+                  <p className="m-0 font-bold text-[#07183f] truncate">{task.mobile}</p>
                 </div>
               </div>
 
@@ -224,7 +193,7 @@ export function AgentCustomerSignature({
                 </div>
                 <div className="min-w-0">
                   <p className="m-0 text-[9px] font-bold text-[#8f98a8]">Location</p>
-                  <p className="m-0 font-bold text-[#07183f] truncate">Pune, Maharashtra</p>
+                  <p className="m-0 font-bold text-[#07183f] truncate">{task.location}</p>
                 </div>
               </div>
 
@@ -239,7 +208,7 @@ export function AgentCustomerSignature({
                 </div>
                 <div className="min-w-0">
                   <p className="m-0 text-[9px] font-bold text-[#8f98a8]">Date & Time</p>
-                  <p className="m-0 font-bold text-[#07183f] truncate text-[10px]">16 May 2025, 11:15 AM</p>
+                  <p className="m-0 font-bold text-[#07183f] truncate text-[10px]">{task.date}, {task.slot}</p>
                 </div>
               </div>
 
@@ -317,22 +286,18 @@ export function AgentCustomerSignature({
                 </span>
               </div>
               <div className="border border-slate-100 rounded-xl bg-slate-50 p-2.5 flex items-center justify-center h-20 overflow-hidden shadow-inner">
-                {/* Renders mini vector mockup signature */}
-                <svg viewBox="0 0 300 100" className="h-full w-auto text-[#07183f] stroke-current" fill="none" strokeWidth="2.5">
-                  <path d="M50 70 L65 30 L80 75 M56 58 L73 56" />
-                  <path d="M80 75 Q90 40 100 70 T114 70 T126 70" />
-                  <path d="M110 85 Q190 65 250 68" />
-                </svg>
+                <img alt="Signature preview" className="h-full max-w-full object-contain" src={signaturePreview} />
               </div>
             </div>
           )}
 
+          {error ? <p className="rounded-xl bg-[#fff0ef] px-3 py-2 text-xs font-bold text-[#ee0f1a]">{error}</p> : null}
+
         </div>
 
-        {/* Footer buttons row */}
-        <div className="absolute bottom-4 left-5 right-5 z-20 w-[calc(100%-40px)] max-w-[390px] mx-auto flex items-center gap-3 flex-none">
+        <footer className="flex flex-none items-center gap-3 border-t border-[#eef2f6] bg-white pt-3">
           <button
-            onClick={drawPreloadedSignature}
+            onClick={handleClear}
             type="button"
             className="flex-1 bg-white border border-[#1158d4] text-[#1158d4] hover:bg-slate-50 h-12 rounded-[14px] font-bold text-sm flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
           >
@@ -340,7 +305,7 @@ export function AgentCustomerSignature({
               <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
               <circle cx="12" cy="13" r="4" />
             </svg>
-            <span>Capture Again</span>
+            <span>Clear</span>
           </button>
           <button
             onClick={handleUseSignature}
@@ -352,7 +317,7 @@ export function AgentCustomerSignature({
             </svg>
             <span>Use Signature</span>
           </button>
-        </div>
+        </footer>
 
       </div>
     </section>

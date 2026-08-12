@@ -1,108 +1,87 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Step } from "../../../types";
+import { loadAgentTasks, setActiveAgentTaskId, type AgentTaskRecord } from "../utils/tasks";
 
 interface HistoryTask {
   id: string;
   title: string;
   type: "search" | "document" | "id" | "scale" | "folder";
-  status: "COMPLETED" | "IN PROGRESS" | "REJECTED" | "CANCELLED";
+  status: "COMPLETED" | "IN PROGRESS" | "PENDING" | "REJECTED" | "CANCELLED";
   location: string;
   distance: string;
   date: string;
   timeRange: string;
   displayStatusText: string;
   displayStatusColorClass: string;
+  taskId: string;
   tagColorClass: string;
   reason?: string;
 }
 
-const historyTasks: HistoryTask[] = [
-  {
-    id: "#T123456",
-    title: "Field Investigation",
-    type: "search",
-    status: "COMPLETED",
-    location: "Pune, Maharashtra",
-    distance: "2.4 km",
-    date: "16 May 2025",
-    timeRange: "10:30 AM - 12:30 PM",
-    displayStatusText: "16 May 2025",
-    displayStatusColorClass: "text-[#088d27]",
-    tagColorClass: "bg-[#ecfaef] text-[#088d27]"
-  },
-  {
-    id: "#T123457",
-    title: "Document Collection",
-    type: "document",
-    status: "IN PROGRESS",
-    location: "Pimpri-Chinchwad, Maharashtra",
-    distance: "5.7 km",
-    date: "16 May 2025",
-    timeRange: "01:00 PM - 03:00 PM",
-    displayStatusText: "In Progress",
-    displayStatusColorClass: "text-[#e58000]",
-    tagColorClass: "bg-[#fff8eb] text-[#e58000]"
-  },
-  {
-    id: "#T123458",
-    title: "KYC Verification",
-    type: "id",
-    status: "COMPLETED",
-    location: "Pune, Maharashtra",
-    distance: "6.1 km",
-    date: "15 May 2025",
-    timeRange: "03:30 PM - 05:00 PM",
-    displayStatusText: "15 May 2025",
-    displayStatusColorClass: "text-[#088d27]",
-    tagColorClass: "bg-[#ecfaef] text-[#088d27]"
-  },
-  {
-    id: "#T123459",
-    title: "Legal Verification",
-    type: "scale",
-    status: "REJECTED",
-    location: "Hinjewadi, Maharashtra",
-    distance: "7.8 km",
-    date: "15 May 2025",
-    timeRange: "11:00 AM - 12:30 PM",
-    displayStatusText: "Rejected",
-    displayStatusColorClass: "text-[#ee0f1a]",
-    tagColorClass: "bg-[#fff0ef] text-[#ee0f1a]",
-    reason: "Reason: Insufficient address proof provided."
-  },
-  {
-    id: "#T123460",
-    title: "Additional Doc Collection",
-    type: "folder",
-    status: "COMPLETED",
-    location: "Pune, Maharashtra",
-    distance: "3.2 km",
-    date: "14 May 2025",
-    timeRange: "02:00 PM - 03:30 PM",
-    displayStatusText: "14 May 2025",
-    displayStatusColorClass: "text-[#088d27]",
-    tagColorClass: "bg-[#ecfaef] text-[#088d27]"
-  },
-  {
-    id: "#T123461",
-    title: "Field Investigation",
-    type: "document",
-    status: "CANCELLED",
-    location: "Akurdi, Maharashtra",
-    distance: "3.2 km",
-    date: "14 May 2025",
-    timeRange: "09:30 AM - 10:30 AM",
-    displayStatusText: "Cancelled",
-    displayStatusColorClass: "text-[#5c6a85]",
-    tagColorClass: "bg-[#edf2f7] text-[#5c6a85]",
-    reason: "Reason: Task was cancelled by admin."
+function taskDate(task: AgentTaskRecord) {
+  if (task.date === "Today") return "16 May 2025";
+  if (task.date === "Tomorrow") return "17 May 2025";
+  return task.date;
+}
+
+function historyStatus(task: AgentTaskRecord): HistoryTask["status"] {
+  if (task.status === "Completed") return "COMPLETED";
+  if (task.status === "Rejected") return "REJECTED";
+  if (task.status === "Cancelled") return "CANCELLED";
+  if (task.status === "Pending") return "PENDING";
+  return "IN PROGRESS";
+}
+
+function statusClasses(task: AgentTaskRecord) {
+  if (task.status === "Completed") {
+    return {
+      displayStatusColorClass: "text-[#088d27]",
+      displayStatusText: taskDate(task),
+      tagColorClass: "bg-[#ecfaef] text-[#088d27]",
+    };
   }
-];
+  if (task.status === "Rejected") {
+    return {
+      displayStatusColorClass: "text-[#ee0f1a]",
+      displayStatusText: "Rejected",
+      tagColorClass: "bg-[#fff0ef] text-[#ee0f1a]",
+    };
+  }
+  if (task.status === "Cancelled") {
+    return {
+      displayStatusColorClass: "text-[#5c6a85]",
+      displayStatusText: "Cancelled",
+      tagColorClass: "bg-[#edf2f7] text-[#5c6a85]",
+    };
+  }
+  return {
+    displayStatusColorClass: task.status === "In Progress" ? "text-[#e58000]" : "text-[#5c6a85]",
+    displayStatusText: task.status,
+    tagColorClass: task.status === "In Progress" ? "bg-[#fff8eb] text-[#e58000]" : "bg-[#edf2f7] text-[#5c6a85]",
+  };
+}
+
+function toHistoryTask(task: AgentTaskRecord): HistoryTask {
+  const classes = statusClasses(task);
+  return {
+    date: taskDate(task),
+    distance: task.distance,
+    id: `#${task.id}`,
+    location: task.location,
+    reason: task.rejectReason,
+    status: historyStatus(task),
+    taskId: task.id,
+    timeRange: task.timeRange,
+    title: task.title,
+    type: task.icon,
+    ...classes,
+  };
+}
 
 function TaskTypeIcon({ type }: { type: HistoryTask["type"] }) {
   if (type === "search") {
     return (
-      <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#edf5ff] text-[#1158d4]">
+      <div className="grid h-10 w-10 flex-none place-items-center rounded-xl bg-[#edf5ff] text-[#1158d4]">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-5 h-5">
           <circle cx="12" cy="12" r="10" />
           <line x1="22" y1="22" x2="16.65" y2="16.65" />
@@ -113,7 +92,7 @@ function TaskTypeIcon({ type }: { type: HistoryTask["type"] }) {
   }
   if (type === "document") {
     return (
-      <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#ecfaef] text-[#088d27]">
+      <div className="grid h-10 w-10 flex-none place-items-center rounded-xl bg-[#ecfaef] text-[#088d27]">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-5 h-5">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
           <polyline points="14 2 14 8 20 8" />
@@ -126,7 +105,7 @@ function TaskTypeIcon({ type }: { type: HistoryTask["type"] }) {
   }
   if (type === "id") {
     return (
-      <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#f8f5ff] text-[#7224e9]">
+      <div className="grid h-10 w-10 flex-none place-items-center rounded-xl bg-[#f8f5ff] text-[#7224e9]">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-5 h-5">
           <rect x="3" y="4" width="18" height="16" rx="2" />
           <circle cx="9" cy="10" r="2" />
@@ -137,7 +116,7 @@ function TaskTypeIcon({ type }: { type: HistoryTask["type"] }) {
   }
   if (type === "scale") {
     return (
-      <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#fff0ef] text-[#ee0f1a]">
+      <div className="grid h-10 w-10 flex-none place-items-center rounded-xl bg-[#fff0ef] text-[#ee0f1a]">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-5 h-5">
           <path d="M12 2v20M2 5h20M3 9l3-3 3 3M15 9l3-3 3 3" />
         </svg>
@@ -145,7 +124,7 @@ function TaskTypeIcon({ type }: { type: HistoryTask["type"] }) {
     );
   }
   return (
-    <div className="grid h-10 w-10 place-items-center rounded-xl bg-[#e6f9ff] text-[#00b2e3]">
+    <div className="grid h-10 w-10 flex-none place-items-center rounded-xl bg-[#e6f9ff] text-[#00b2e3]">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-5 h-5">
         <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
       </svg>
@@ -203,12 +182,17 @@ interface AgentHistoryProps {
 export function AgentHistory({ onNavigate }: AgentHistoryProps) {
   const [activeTab, setActiveTab] = useState<"all" | "completed" | "rejected" | "cancelled">("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [dateFilter, setDateFilter] = useState<"all" | "today" | "older">("all");
+  const historyTasks = useMemo(() => loadAgentTasks().map(toHistoryTask), []);
 
   const filteredTasks = historyTasks.filter((task) => {
     // Filter by Tab
     if (activeTab === "completed" && task.status !== "COMPLETED") return false;
     if (activeTab === "rejected" && task.status !== "REJECTED") return false;
     if (activeTab === "cancelled" && task.status !== "CANCELLED") return false;
+    if (dateFilter === "today" && task.date !== "16 May 2025") return false;
+    if (dateFilter === "older" && task.date === "16 May 2025") return false;
 
     // Filter by Search Query
     if (searchQuery) {
@@ -222,9 +206,14 @@ export function AgentHistory({ onNavigate }: AgentHistoryProps) {
     return true;
   });
 
+  const openTask = (task: HistoryTask) => {
+    setActiveAgentTaskId(task.taskId);
+    onNavigate?.("task-details");
+  };
+
   return (
     <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden animate-slide-up">
-      <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-20 justify-start relative overflow-hidden">
+      <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-[clamp(12px,5vw,20px)] pt-4 pb-20 justify-start relative overflow-hidden">
         
         {/* Header */}
         <header className="relative flex items-center justify-center h-12 w-full flex-none">
@@ -247,13 +236,13 @@ export function AgentHistory({ onNavigate }: AgentHistoryProps) {
         </header>
 
         {/* Tab Switcher */}
-        <div className="mt-2 bg-[#f8fafc] border border-[#eef2f6] rounded-[14px] p-1 flex items-center w-full flex-none">
+        <div className="mt-2 bg-[#f8fafc] border border-[#eef2f6] rounded-[14px] p-1 grid grid-cols-4 gap-1 w-full flex-none">
           {(["all", "completed", "rejected", "cancelled"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               type="button"
-              className={`flex-1 text-[11px] font-bold py-2 rounded-xl text-center capitalize cursor-pointer transition-all duration-200 border-0 ${
+              className={`min-w-0 text-[10px] min-[360px]:text-[11px] font-bold py-2 rounded-xl text-center capitalize cursor-pointer transition-all duration-200 border-0 ${
                 activeTab === tab
                   ? "bg-[#edf4ff] text-[#1158d4] shadow-sm"
                   : "text-[#70798d] hover:text-[#07183f] bg-transparent"
@@ -265,7 +254,7 @@ export function AgentHistory({ onNavigate }: AgentHistoryProps) {
         </div>
 
         {/* Search & Filter */}
-        <div className="mt-4 flex gap-2.5 w-full flex-none">
+        <div className="mt-4 flex gap-2 w-full flex-none">
           <div className="relative flex-1">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="absolute left-3.5 top-1/2 w-4 h-4 -translate-y-1/2 text-slate-400">
               <circle cx="11" cy="11" r="8" />
@@ -276,13 +265,16 @@ export function AgentHistory({ onNavigate }: AgentHistoryProps) {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search by task name, customer or ID..."
-              className="w-full h-10 pl-10 pr-4 border border-[#e2e8f0] rounded-[12px] text-xs font-bold placeholder-slate-400 bg-white outline-none focus:border-[#1158d4] focus:ring-1 focus:ring-[#1158d4] shadow-sm"
+              className="w-full h-10 pl-10 pr-3 border border-[#e2e8f0] rounded-[12px] text-xs font-bold placeholder-slate-400 bg-white outline-none shadow-sm"
             />
           </div>
           
           <button
+            onClick={() => setShowFilters((current) => !current)}
             type="button"
-            className="flex items-center gap-1.5 h-10 px-4 border border-[#e2e8f0] rounded-[12px] bg-white text-xs font-bold text-[#061332] cursor-pointer shadow-sm hover:bg-slate-50"
+            aria-label="Filter history"
+            aria-pressed={showFilters}
+            className="flex items-center justify-center gap-1.5 h-10 w-10 min-[360px]:w-auto min-[360px]:px-4 border border-[#e2e8f0] rounded-[12px] bg-white text-xs font-bold text-[#061332] cursor-pointer shadow-sm hover:bg-slate-50 flex-none"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4 text-[#1158d4]">
               <line x1="4" y1="21" x2="4" y2="14" />
@@ -295,9 +287,37 @@ export function AgentHistory({ onNavigate }: AgentHistoryProps) {
               <line x1="9" y1="8" x2="15" y2="8" />
               <line x1="17" y1="16" x2="23" y2="16" />
             </svg>
-            <span>Filter</span>
+            <span className="hidden min-[360px]:inline">Filter</span>
           </button>
         </div>
+
+        {showFilters ? (
+          <section className="mt-3 grid grid-cols-2 gap-2 rounded-[16px] border border-[#edf1f5] bg-[#fbfdff] p-3 shadow-sm flex-none">
+            {(["all", "today", "older"] as const).map((filter) => (
+              <button
+                key={filter}
+                onClick={() => setDateFilter(filter)}
+                type="button"
+                className={`h-9 rounded-xl text-[11px] font-bold capitalize ${
+                  dateFilter === filter ? "bg-[#1158d4] text-white" : "border border-[#d8e0eb] bg-white text-[#5c6a85]"
+                }`}
+              >
+                {filter === "older" ? "Older" : filter}
+              </button>
+            ))}
+            <button
+              onClick={() => {
+                setActiveTab("all");
+                setDateFilter("all");
+                setSearchQuery("");
+              }}
+              type="button"
+              className="h-9 rounded-xl border border-[#d8e0eb] bg-white text-[11px] font-bold text-[#1158d4]"
+            >
+              Reset
+            </button>
+          </section>
+        ) : null}
 
         {/* Recent Activity List */}
         <div className="flex-1 mt-4 overflow-hidden flex flex-col min-h-0">
@@ -313,33 +333,36 @@ export function AgentHistory({ onNavigate }: AgentHistoryProps) {
               filteredTasks.map((task) => (
                 <article
                   key={task.id}
-                  onClick={() => onNavigate?.("task-details")}
-                  className="border border-[#edf1f5] rounded-[18px] bg-white shadow-sm overflow-hidden flex flex-col cursor-pointer hover:bg-slate-50/50"
+                  onClick={() => openTask(task)}
+                  className="flex min-h-[92px] shrink-0 cursor-pointer flex-col overflow-hidden rounded-[18px] border border-[#edf1f5] bg-white shadow-sm hover:bg-slate-50/50"
                 >
-                  <div className="grid grid-cols-[40px_1fr_auto_auto] items-center gap-3 px-4 py-3.5">
+                  <div className="relative flex items-start gap-3 px-3 py-3 min-[360px]:px-4 min-[360px]:py-3.5">
                     <TaskTypeIcon type={task.type} />
 
-                    <div className="min-w-0 text-left">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold leading-none ${task.tagColorClass}`}>
+                    <div className="min-w-0 flex-1 pr-5 text-left">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className={`max-w-full rounded px-1.5 py-0.5 text-[9px] font-bold leading-none ${task.tagColorClass}`}>
                           {task.status}
                         </span>
-                        <h3 className="min-w-0 truncate text-xs font-bold leading-none text-[#07183f]">
-                          {task.title}
-                        </h3>
+                        <span className={`text-[10px] font-bold leading-none ${task.displayStatusColorClass}`}>
+                          {task.displayStatusText}
+                        </span>
                       </div>
 
-                      <div className="mt-1.5 flex items-center gap-1 text-[10px] font-medium leading-none text-[#5c6a85]">
+                      <h3 className="mt-1.5 max-w-full break-words text-[13px] font-bold leading-snug text-[#07183f]">
+                        {task.title}
+                      </h3>
+
+                      <div className="mt-1.5 grid grid-cols-[12px_minmax(0,1fr)_auto] items-center gap-1 text-[10px] font-medium leading-none text-[#5c6a85]">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3 flex-none text-[#1158d4]">
                           <path d="M12 21s7-5.2 7-12a7 7 0 0 0-14 0c0 6.8 7 12 7 12Z" />
                           <circle cx="12" cy="9" r="2" />
                         </svg>
                         <span className="truncate">{task.location}</span>
-                        <span className="text-[#a0aec0]">.</span>
-                        <span>{task.distance}</span>
+                        <span className="whitespace-nowrap text-[#5c6a85]">{task.distance}</span>
                       </div>
 
-                      <div className="mt-1.5 flex items-center gap-1 text-[10px] font-medium leading-none text-[#5c6a85]">
+                      <div className="mt-1.5 grid grid-cols-[12px_minmax(0,1fr)] items-center gap-1 text-[10px] font-medium leading-none text-[#5c6a85]">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3 flex-none text-[#1158d4]">
                           <rect x="3" y="4" width="18" height="18" rx="2" />
                           <line x1="16" y1="2" x2="16" y2="6" />
@@ -350,13 +373,7 @@ export function AgentHistory({ onNavigate }: AgentHistoryProps) {
                       </div>
                     </div>
 
-                    <div className="flex flex-col items-end gap-1 flex-none text-right justify-center">
-                      <span className={`text-[10px] font-bold ${task.displayStatusColorClass}`}>
-                        {task.displayStatusText}
-                      </span>
-                    </div>
-
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 text-slate-400 flex-none ml-1">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400">
                       <path d="m9 5 7 7-7 7" />
                     </svg>
                   </div>
@@ -374,8 +391,8 @@ export function AgentHistory({ onNavigate }: AgentHistoryProps) {
 
             {/* Pagination Footer */}
             {filteredTasks.length > 5 && (
-              <div className="flex items-center justify-between px-2 py-1 w-full flex-none mt-2">
-                <span className="text-[10px] font-bold text-[#8f98a8]">Showing 1 to {filteredTasks.length} of {filteredTasks.length} tasks</span>
+              <div className="flex flex-wrap items-center justify-between gap-2 px-1 py-1 w-full flex-none mt-2">
+                <span className="min-w-0 text-[10px] font-bold text-[#8f98a8]">Showing 1 to {filteredTasks.length} of {filteredTasks.length} tasks</span>
                 <div className="flex items-center gap-1">
                   <button type="button" className="w-6 h-6 rounded-md border border-[#e2e8f0] bg-white grid place-items-center text-slate-400 hover:text-slate-700 cursor-pointer text-xs">
                     &lt;

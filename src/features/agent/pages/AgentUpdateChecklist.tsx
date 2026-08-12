@@ -1,5 +1,13 @@
-import { useState, useEffect } from "react";
+import { useRef, useState, useEffect } from "react";
 import type { Step } from "../../../types";
+import {
+  addCapturedAsset,
+  addCapturedBlob,
+  deleteCapturedAsset,
+  loadCapturedAssets,
+  type CapturedAsset,
+} from "../utils/media";
+import { completeActiveAgentTask, getActiveAgentTask } from "../utils/tasks";
 
 interface AgentUpdateChecklistProps {
   onBack: () => void;
@@ -14,9 +22,26 @@ export function AgentUpdateChecklist({
   completedStepsCount = 2,
   setCompletedStepsCount
 }: AgentUpdateChecklistProps) {
+  const [task] = useState(() => getActiveAgentTask());
+  const [initialUploadedProof] = useState<CapturedAsset | null>(
+    () => loadCapturedAssets(task.id, "document").find((asset) => asset.slot === "address-verification") || null,
+  );
+  const [initialVoiceFile] = useState<CapturedAsset | null>(() => loadCapturedAssets(task.id, "voice")[0] || null);
   const [notes, setNotes] = useState("");
-  const [step3Completed, setStep3Completed] = useState(completedStepsCount >= 3);
-  const [uploadedProof, setUploadedProof] = useState<string | null>(null);
+  const [step3Completed, setStep3Completed] = useState(
+    () => completedStepsCount >= 3 || Boolean(initialUploadedProof) || Boolean(initialVoiceFile),
+  );
+  const [uploadedProof, setUploadedProof] = useState<CapturedAsset | null>(initialUploadedProof);
+  const [proofError, setProofError] = useState("");
+  const [photoCount] = useState(() => loadCapturedAssets(task.id, "photo").length);
+  const [documentCount] = useState(() => loadCapturedAssets(task.id, "document").length);
+  const [signatureCount] = useState(() => loadCapturedAssets(task.id, "signature").length);
+  const proofInputRef = useRef<HTMLInputElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingStartedAtRef = useRef(0);
 
   // Questionnaire state variables
   const [residesVerified, setResidesVerified] = useState<string | null>(null);
@@ -25,8 +50,10 @@ export function AgentUpdateChecklist({
 
   // Voice recording state variables
   const [isRecording, setIsRecording] = useState(false);
+  const [isStartingRecording, setIsStartingRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
-  const [voiceFile, setVoiceFile] = useState<{ name: string; duration: number } | null>(null);
+  const [voiceFile, setVoiceFile] = useState<CapturedAsset | null>(initialVoiceFile);
+  const [voiceError, setVoiceError] = useState("");
   const [isPlayingVoice, setIsPlayingVoice] = useState(false);
   const [playbackProgress, setPlaybackProgress] = useState(0);
 
@@ -41,52 +68,151 @@ export function AgentUpdateChecklist({
     };
   }, [isRecording]);
 
-  // Audio Playback Simulation
   useEffect(() => {
-    if (!isPlayingVoice) return;
-    const playTimer = window.setInterval(() => {
-      setPlaybackProgress((prev) => {
-        if (prev >= 100) {
-          setIsPlayingVoice(false);
-          return 0;
-        }
-        return prev + 12.5; // Ticks up to 100% in 8 ticks
-      });
-    }, 1000);
     return () => {
-      window.clearInterval(playTimer);
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") {
+        recorder.onstop = null;
+        recorder.stop();
+      }
+      audioStreamRef.current?.getTracks().forEach((track) => track.stop());
     };
-  }, [isPlayingVoice]);
+  }, []);
 
-  const handleStartRecord = () => {
-    setRecordingSeconds(0);
-    setIsRecording(true);
-    setVoiceFile(null);
+  const stopVoiceStream = () => {
+    audioStreamRef.current?.getTracks().forEach((track) => track.stop());
+    audioStreamRef.current = null;
+  };
+
+  const formatDuration = (seconds = 0) => {
+    const safeSeconds = Math.max(0, Math.floor(seconds));
+    return `${Math.floor(safeSeconds / 60)}:${String(safeSeconds % 60).padStart(2, "0")}`;
+  };
+
+  const audioExtensionFor = (mimeType: string) => {
+    if (mimeType.includes("mp4") || mimeType.includes("aac")) return "m4a";
+    if (mimeType.includes("ogg")) return "ogg";
+    return "webm";
+  };
+
+  const finishVoiceRecording = async (mimeType: string) => {
+    const blob = new Blob(audioChunksRef.current, { type: mimeType || "audio/webm" });
+    const duration = Math.max(Math.round((Date.now() - recordingStartedAtRef.current) / 1000), 1);
+    stopVoiceStream();
+
+    if (!blob.size) {
+      setVoiceError("No voice data was captured.");
+      return;
+    }
+
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+      const asset = await addCapturedBlob(blob, {
+        duration,
+        kind: "voice",
+        mimeType: mimeType || blob.type || "audio/webm",
+        name: `voice_remarks_${timestamp}.${audioExtensionFor(mimeType || blob.type)}`,
+        slot: "voice-remarks",
+        taskId: task.id,
+      });
+      setVoiceFile(asset);
+      setVoiceError("");
+      setStep3Completed(true);
+      if (setCompletedStepsCount && completedStepsCount < 3) {
+        setCompletedStepsCount(3);
+      }
+    } catch (err) {
+      setVoiceError(err instanceof Error ? err.message : "Unable to save voice remarks.");
+    }
+  };
+
+  const handleStartRecord = async () => {
+    setVoiceError("");
+    setPlaybackProgress(0);
+    setIsPlayingVoice(false);
+    audioRef.current?.pause();
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setVoiceError("Voice recording is not supported on this device.");
+      return;
+    }
+
+    setIsStartingRecording(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      audioStreamRef.current = stream;
+      mediaRecorderRef.current = recorder;
+      recordingStartedAtRef.current = Date.now();
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        void finishVoiceRecording(recorder.mimeType);
+      };
+      setRecordingSeconds(0);
+      setVoiceFile(null);
+      recorder.start();
+      setIsRecording(true);
+    } catch {
+      stopVoiceStream();
+      setIsRecording(false);
+      setVoiceError("Microphone permission denied or unavailable.");
+    } finally {
+      setIsStartingRecording(false);
+    }
   };
 
   const handleStopRecord = () => {
+    const recorder = mediaRecorderRef.current;
     setIsRecording(false);
-    setVoiceFile({
-      name: `voice_remarks_${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }).replace(' ', '')}.wav`,
-      duration: Math.max(recordingSeconds, 3)
-    });
-    setStep3Completed(true);
-    if (setCompletedStepsCount && completedStepsCount < 3) {
-      setCompletedStepsCount(3);
+    if (recorder && recorder.state !== "inactive") {
+      recorder.stop();
+    } else {
+      stopVoiceStream();
     }
   };
 
   const handleDeleteVoice = () => {
+    if (voiceFile) {
+      deleteCapturedAsset(voiceFile.id, task.id);
+    }
+    audioRef.current?.pause();
     setVoiceFile(null);
     setIsPlayingVoice(false);
     setPlaybackProgress(0);
   };
 
-  const handleVoicePlayToggle = () => {
-    if (!isPlayingVoice) {
-      setPlaybackProgress(0);
+  const handleVoicePlayToggle = async () => {
+    const audio = audioRef.current;
+    if (!audio || !voiceFile) return;
+
+    setVoiceError("");
+    if (isPlayingVoice) {
+      audio.pause();
+      setIsPlayingVoice(false);
+      return;
     }
-    setIsPlayingVoice((prev) => !prev);
+
+    try {
+      if (audio.ended) audio.currentTime = 0;
+      await audio.play();
+      setIsPlayingVoice(true);
+    } catch {
+      setVoiceError("Unable to play recording.");
+    }
+  };
+
+  const handleAudioTimeUpdate = () => {
+    const audio = audioRef.current;
+    if (!audio?.duration) return;
+    setPlaybackProgress((audio.currentTime / audio.duration) * 100);
+  };
+
+  const handleAudioEnded = () => {
+    setIsPlayingVoice(false);
+    setPlaybackProgress(0);
   };
 
   // Derive completed percentage
@@ -100,11 +226,26 @@ export function AgentUpdateChecklist({
   const progressPercent = Math.round((completedCount / 5) * 100);
 
   const handleUploadClick = () => {
-    // Simulate image upload
-    setUploadedProof("address_proof_uploaded.png");
-    setStep3Completed(true);
-    if (setCompletedStepsCount && completedStepsCount < 3) {
-      setCompletedStepsCount(3);
+    setProofError("");
+    proofInputRef.current?.click();
+  };
+
+  const handleProofFile = async (fileList: FileList | null) => {
+    const file = fileList?.[0];
+    if (!file) return;
+
+    try {
+      const asset = await addCapturedAsset(file, { kind: "document", slot: "address-verification", taskId: task.id });
+      setUploadedProof(asset);
+      setProofError("");
+      setStep3Completed(true);
+      if (setCompletedStepsCount && completedStepsCount < 3) {
+        setCompletedStepsCount(3);
+      }
+    } catch (err) {
+      setProofError(err instanceof Error ? err.message : "Unable to save proof.");
+    } finally {
+      if (proofInputRef.current) proofInputRef.current.value = "";
     }
   };
 
@@ -112,14 +253,14 @@ export function AgentUpdateChecklist({
     if (completedStepsCount < 5) {
       onBack();
     } else {
-      // Completed all workflow steps! Go to My Tasks or History.
-      onNavigate?.("my-tasks");
+      completeActiveAgentTask();
+      onNavigate?.("history");
     }
   };
 
   return (
     <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden animate-slide-up">
-      <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-4 justify-start relative h-full overflow-hidden">
+      <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-[max(16px,env(safe-area-inset-bottom))] justify-start h-full min-h-0 overflow-hidden">
         
         {/* Header */}
         <header className="relative flex items-center justify-center h-12 w-full flex-none">
@@ -148,7 +289,15 @@ export function AgentUpdateChecklist({
         </header>
 
         {/* Scrollable Checklist */}
-        <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full mt-2 flex flex-col gap-4 pb-16">
+        <input
+          ref={proofInputRef}
+          accept="image/*,application/pdf"
+          className="hidden"
+          onChange={(event) => void handleProofFile(event.target.files)}
+          type="file"
+        />
+
+        <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full mt-2 flex flex-col gap-4 pb-4">
           
           {/* Progress Card */}
           <div className="border border-[#edf1f5] rounded-[18px] bg-white p-4 shadow-sm flex flex-col w-full flex-none text-left">
@@ -247,17 +396,15 @@ export function AgentUpdateChecklist({
                 </div>
                 
                 <div className="flex items-center gap-3.5 mt-1.5">
-                  <div className="w-14 h-14 rounded-lg bg-slate-100 overflow-hidden border border-slate-200">
-                    {/* Inline vector avatar preview */}
-                    <svg viewBox="0 0 100 100" className="w-full h-full object-cover">
-                      <rect width="100" height="100" fill="#f1f5f9" />
-                      <circle cx="50" cy="42" r="22" fill="#94a3b8" />
-                      <path d="M15 88c0-18 15-28 35-28s35 10 35 28" fill="#475569" />
+                  <div className="grid w-14 h-14 place-items-center rounded-lg bg-slate-100 overflow-hidden border border-slate-200 text-[#1158d4]">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-6 h-6">
+                      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                      <circle cx="12" cy="13" r="4" />
                     </svg>
                   </div>
                   <div className="text-left">
-                    <p className="m-0 text-xs font-bold text-[#1158d4]">1 Photo Captured</p>
-                    <p className="m-0 text-[10px] text-[#8f98a8] mt-0.5">Tap to view</p>
+                    <p className="m-0 text-xs font-bold text-[#1158d4]">{photoCount} Photo{photoCount === 1 ? "" : "s"} Captured</p>
+                    <p className="m-0 text-[10px] text-[#8f98a8] mt-0.5">Tap to capture or review</p>
                   </div>
                 </div>
 
@@ -364,10 +511,7 @@ export function AgentUpdateChecklist({
                       <div className="flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
                         <span className="text-[11px] font-bold text-red-600">Recording...</span>
-                        <span className="text-[10px] font-bold text-slate-500">
-                          {String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:
-                          {String(recordingSeconds % 60).padStart(2, "0")}
-                        </span>
+                        <span className="text-[10px] font-bold text-slate-500">{formatDuration(recordingSeconds)}</span>
                       </div>
                       
                       <button
@@ -375,17 +519,25 @@ export function AgentUpdateChecklist({
                         type="button"
                         className="w-8 h-8 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center border-0 cursor-pointer shadow"
                       >
-                        {/* Stop icon */}
-                        <rect width="8" height="8" fill="white" className="w-2.5 h-2.5 rounded-sm" />
+                        <span className="h-2.5 w-2.5 rounded-sm bg-white" />
                       </button>
                     </div>
                   ) : voiceFile ? (
                     /* Recorded File Player */
                     <div className="border border-slate-200 rounded-xl p-3 bg-slate-50 flex flex-col gap-2">
+                      <audio
+                        ref={audioRef}
+                        className="hidden"
+                        onEnded={handleAudioEnded}
+                        onPause={() => setIsPlayingVoice(false)}
+                        onPlay={() => setIsPlayingVoice(true)}
+                        onTimeUpdate={handleAudioTimeUpdate}
+                        src={voiceFile.dataUrl}
+                      />
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-bold text-[#07183f] truncate max-w-[170px]">{voiceFile.name}</span>
                         <div className="flex items-center gap-2">
-                          <span className="text-[9px] font-bold text-slate-400">0:0{voiceFile.duration}</span>
+                          <span className="text-[9px] font-bold text-slate-400">{formatDuration(voiceFile.duration)}</span>
                           <button
                             onClick={handleDeleteVoice}
                             type="button"
@@ -432,17 +584,19 @@ export function AgentUpdateChecklist({
                   ) : (
                     /* Default Record Button */
                     <button
-                      onClick={handleStartRecord}
+                      onClick={() => void handleStartRecord()}
                       type="button"
+                      disabled={isStartingRecording}
                       className="border border-[#cbdbe5] rounded-xl py-2 px-3 bg-white flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 text-xs font-bold text-[#1158d4] outline-none"
                     >
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4 text-[#1158d4]">
                         <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
                         <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8" />
                       </svg>
-                      <span>Record Voice Remarks</span>
+                      <span>{isStartingRecording ? "Opening Microphone..." : "Record Voice Remarks"}</span>
                     </button>
                   )}
+                  {voiceError ? <p className="m-0 text-[10px] font-bold text-[#ee0f1a]">{voiceError}</p> : null}
                 </div>
 
                 <div className="flex flex-col gap-1">
@@ -474,18 +628,19 @@ export function AgentUpdateChecklist({
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-5 h-5">
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
-                        <span>Proof Uploaded Successfully</span>
+                        <span className="truncate">{uploadedProof.name}</span>
                       </div>
                     ) : (
                       <>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="w-6 h-6 text-[#1158d4]">
                           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
                         </svg>
-                        <span className="font-bold text-xs text-[#1158d4]">Tap to upload photo</span>
-                        <span className="text-[9px] text-slate-400">JPG, PNG up to 5MB</span>
+                        <span className="font-bold text-xs text-[#1158d4]">Tap to upload proof</span>
+                        <span className="text-[9px] text-slate-400">JPG, PNG, PDF up to 5MB</span>
                       </>
                     )}
                   </div>
+                  {proofError ? <p className="m-0 text-[10px] font-bold text-[#ee0f1a]">{proofError}</p> : null}
                 </div>
               </div>
             </div>
@@ -498,9 +653,9 @@ export function AgentUpdateChecklist({
               >
                 <div className="flex items-center gap-3.5">
                   <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-none font-bold text-[10px] ${
-                    completedStepsCount >= 4 ? "bg-[#ecfaef] text-[#088d27]" : "border border-slate-300 text-[#5c6a85]"
+                    documentCount > 0 || completedStepsCount >= 4 ? "bg-[#ecfaef] text-[#088d27]" : "border border-slate-300 text-[#5c6a85]"
                   }`}>
-                    {completedStepsCount >= 4 ? (
+                    {documentCount > 0 || completedStepsCount >= 4 ? (
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-3.5 h-3.5">
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
@@ -512,9 +667,9 @@ export function AgentUpdateChecklist({
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className={`font-bold text-[9px] px-2 py-0.5 rounded-full ${
-                    completedStepsCount >= 4 ? "bg-[#ecfaef] text-[#088d27]" : "bg-[#edf2f7] text-[#5c6a85]"
+                    documentCount > 0 || completedStepsCount >= 4 ? "bg-[#ecfaef] text-[#088d27]" : "bg-[#edf2f7] text-[#5c6a85]"
                   }`}>
-                    {completedStepsCount >= 4 ? "Completed" : "Pending"}
+                    {documentCount > 0 ? `${documentCount} Files` : completedStepsCount >= 4 ? "Completed" : "Pending"}
                   </span>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 text-slate-400">
                     <path d="m6 9 6 6 6-6" />
@@ -531,9 +686,9 @@ export function AgentUpdateChecklist({
               >
                 <div className="flex items-center gap-3.5">
                   <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-none font-bold text-[10px] ${
-                    completedStepsCount >= 5 ? "bg-[#ecfaef] text-[#088d27]" : "border border-slate-300 text-[#5c6a85]"
+                    signatureCount > 0 || completedStepsCount >= 5 ? "bg-[#ecfaef] text-[#088d27]" : "border border-slate-300 text-[#5c6a85]"
                   }`}>
-                    {completedStepsCount >= 5 ? (
+                    {signatureCount > 0 || completedStepsCount >= 5 ? (
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-3.5 h-3.5">
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
@@ -545,9 +700,9 @@ export function AgentUpdateChecklist({
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className={`font-bold text-[9px] px-2 py-0.5 rounded-full ${
-                    completedStepsCount >= 5 ? "bg-[#ecfaef] text-[#088d27]" : "bg-[#edf2f7] text-[#5c6a85]"
+                    signatureCount > 0 || completedStepsCount >= 5 ? "bg-[#ecfaef] text-[#088d27]" : "bg-[#edf2f7] text-[#5c6a85]"
                   }`}>
-                    {completedStepsCount >= 5 ? "Completed" : "Pending"}
+                    {signatureCount > 0 ? "Captured" : completedStepsCount >= 5 ? "Completed" : "Pending"}
                   </span>
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 text-slate-400">
                     <path d="m6 9 6 6 6-6" />
@@ -560,8 +715,7 @@ export function AgentUpdateChecklist({
 
         </div>
 
-        {/* Floating Footer Button */}
-        <div className="absolute bottom-4 left-5 right-5 z-20 w-[calc(100%-40px)] max-w-[390px] mx-auto flex-none">
+        <footer className="flex-none border-t border-[#eef2f6] bg-white pt-3">
           <button
             onClick={handleSaveAndContinue}
             type="button"
@@ -574,7 +728,7 @@ export function AgentUpdateChecklist({
             </svg>
             <span>Save & Continue</span>
           </button>
-        </div>
+        </footer>
 
       </div>
     </section>

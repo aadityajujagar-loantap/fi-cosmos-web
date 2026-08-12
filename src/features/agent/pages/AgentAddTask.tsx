@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { Step } from "../../../types";
+import { createAgentTask } from "../utils/tasks";
 
 interface AgentAddTaskProps {
   onBack: () => void;
@@ -120,17 +121,8 @@ export function AgentAddTask({ onBack, onNavigate }: AgentAddTaskProps) {
     setIsCreating(true);
     window.setTimeout(() => {
       setIsCreating(false);
-      const id = `TASK-${Date.now().toString().slice(-6)}`;
-      const payload = {
-        ...form,
-        id,
-        checklist: Array.from(checklist),
-        createdAt: new Date().toISOString(),
-        status: "Pending",
-      };
-      const existing = JSON.parse(localStorage.getItem("agent-created-tasks") || "[]");
-      localStorage.setItem("agent-created-tasks", JSON.stringify([payload, ...existing].slice(0, 20)));
-      setCreatedId(id);
+      const task = createAgentTask({ ...form, checklist: Array.from(checklist) });
+      setCreatedId(task.id);
       setError("");
     }, 1000);
   };
@@ -152,7 +144,7 @@ export function AgentAddTask({ onBack, onNavigate }: AgentAddTaskProps) {
             <section className="mt-3 rounded-[18px] border border-[#d4f3dd] bg-[#f5fdf7] p-4">
               <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#088d27]">Task created</p>
               <h2 className="mt-1 text-xl font-bold leading-tight text-[#07183f]">{createdId} is saved to the local field queue.</h2>
-              <p className="mt-2 text-xs font-medium leading-relaxed text-[#5c6a85]">This static demo stores created tasks in browser localStorage for the agent session.</p>
+              <p className="mt-2 text-xs font-medium leading-relaxed text-[#5c6a85]">The task is now available in My Tasks, History, Details and Map.</p>
             </section>
           ) : (
             <section className="mt-3 rounded-[18px] border border-[#d3e5fe] bg-gradient-to-r from-[#f5f9ff] to-[#edf5ff] p-4">

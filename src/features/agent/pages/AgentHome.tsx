@@ -1,104 +1,6 @@
+import { useMemo, useState } from "react";
 import type { Tone, SummaryCard, Task, Step } from "../../../types";
-
-const summaries: SummaryCard[] = [
-  { label: "Total Tasks", count: 5, icon: "clipboard", tone: "blue" },
-  { label: "In Progress", count: 2, icon: "hourglass", tone: "orange" },
-  { label: "Completed", count: 1, icon: "check", tone: "green" },
-  { label: "Pending", count: 2, icon: "alert", tone: "red" },
-];
-
-const tasks: Task[] = [
-  {
-    title: "Field Investigation",
-    location: "Pune, Maharashtra",
-    distance: "2.4 km",
-    time: "10:30 AM - 12:30 PM",
-    priority: "HIGH",
-    tone: "blue",
-    icon: "search",
-    action: "filled",
-  },
-  {
-    title: "Document Collection",
-    location: "Pimpri-Chinchwad, Maharashtra",
-    distance: "5.7 km",
-    time: "01:00 PM - 03:00 PM",
-    priority: "MEDIUM",
-    tone: "green",
-    icon: "document",
-    action: "outline",
-  },
-  {
-    title: "KYC Verification",
-    location: "Pune, Maharashtra",
-    distance: "6.1 km",
-    time: "03:30 PM - 05:00 PM",
-    priority: "HIGH",
-    tone: "purple",
-    icon: "id",
-    action: "outline",
-  },
-  {
-    title: "Legal Verification",
-    location: "Hinjewadi, Maharashtra",
-    distance: "7.8 km",
-    time: "Tomorrow",
-    priority: "LOW",
-    tone: "orange",
-    icon: "scale",
-    action: "outline",
-  },
-  {
-    title: "Additional Doc Collection",
-    location: "Pune, Maharashtra",
-    distance: "9.3 km",
-    time: "Tomorrow",
-    priority: "MEDIUM",
-    tone: "cyan",
-    icon: "folder",
-    action: "outline",
-  },
-  {
-    title: "Asset Valuation",
-    location: "Kothrud, Pune",
-    distance: "4.2 km",
-    time: "10:00 AM - 11:30 AM",
-    priority: "HIGH",
-    tone: "blue",
-    icon: "search",
-    action: "outline",
-  },
-  {
-    title: "Signature Verification",
-    location: "Aundh, Pune",
-    distance: "8.1 km",
-    time: "12:00 PM - 01:30 PM",
-    priority: "MEDIUM",
-    tone: "green",
-    icon: "document",
-    action: "outline",
-  },
-  {
-    title: "Background Check",
-    location: "Baner, Pune",
-    distance: "5.3 km",
-    time: "02:00 PM - 03:30 PM",
-    priority: "LOW",
-    tone: "orange",
-    icon: "scale",
-    action: "outline",
-  },
-  {
-    title: "Final Approval Upload",
-    location: "Viman Nagar, Pune",
-    distance: "11.5 km",
-    time: "Tomorrow",
-    priority: "HIGH",
-    tone: "purple",
-    icon: "folder",
-    action: "outline",
-  },
-];
+import { isTerminalStatus, loadAgentTasks, setActiveAgentTaskId, type AgentTaskRecord } from "../utils/tasks";
 
 const toneStyles: Record<Tone, { accent: string; card: string; iconBg: string; soft: string; text: string }> = {
   blue: {
@@ -379,6 +281,27 @@ interface AgentHomeProps {
 }
 
 export function AgentHome({ onNavigate }: AgentHomeProps) {
+  const [taskQueue] = useState<AgentTaskRecord[]>(() => loadAgentTasks());
+  const todaysTasks = useMemo(
+    () => taskQueue.filter((task) => task.date === "Today" && !isTerminalStatus(task.status)),
+    [taskQueue],
+  );
+  const summaries = useMemo<SummaryCard[]>(() => {
+    const countByStatus = (status: AgentTaskRecord["status"]) => taskQueue.filter((task) => task.status === status).length;
+
+    return [
+      { label: "Total Tasks", count: taskQueue.length, icon: "clipboard", tone: "blue" },
+      { label: "In Progress", count: countByStatus("In Progress"), icon: "hourglass", tone: "orange" },
+      { label: "Completed", count: countByStatus("Completed"), icon: "check", tone: "green" },
+      { label: "Pending", count: countByStatus("Pending"), icon: "alert", tone: "red" },
+    ];
+  }, [taskQueue]);
+
+  const openTask = (task: AgentTaskRecord, step: Step = "task-details") => {
+    setActiveAgentTaskId(task.id);
+    onNavigate?.(step);
+  };
+
   return (
     <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden animate-slide-up">
       <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-20 justify-start relative overflow-hidden">
@@ -422,7 +345,7 @@ export function AgentHome({ onNavigate }: AgentHomeProps) {
               </span>
             </h2>
             <p className="mt-1 text-xs font-medium text-[#5c6a85] leading-snug">
-              You have 5 tasks assigned today.
+              You have {todaysTasks.length} tasks assigned today.
             </p>
           </div>
           <div className="w-28 h-20 flex-none flex items-center justify-center">
@@ -467,12 +390,12 @@ export function AgentHome({ onNavigate }: AgentHomeProps) {
           </header>
 
           <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-            {tasks.map((task) => {
+            {todaysTasks.map((task) => {
               const tone = toneStyles[task.tone];
               return (
                 <article
-                  key={task.title}
-                  onClick={() => onNavigate?.("task-details")}
+                  key={task.id}
+                  onClick={() => openTask(task)}
                   className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 border-b border-[#edf1f5] last:border-b-0 cursor-pointer hover:bg-slate-50/50"
                 >
                   <div className="flex items-start gap-3 min-w-[200px] flex-1">
@@ -508,7 +431,7 @@ export function AgentHome({ onNavigate }: AgentHomeProps) {
                     <button
                       onClick={(event) => {
                         event.stopPropagation();
-                        onNavigate?.("task-details");
+                        openTask(task, task.status === "In Progress" ? "task-in-progress" : "task-details");
                       }}
                       type="button"
                       className={

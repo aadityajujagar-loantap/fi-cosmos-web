@@ -1,138 +1,18 @@
 import { useMemo, useState } from "react";
 import type { Tone, SummaryCard, Task, Step } from "../../../types";
+import {
+  deleteAgentTask,
+  isTerminalStatus,
+  loadAgentTasks,
+  setActiveAgentTaskId,
+  updateAgentTask,
+  type AgentTaskRecord,
+  type AgentTaskStatus,
+} from "../utils/tasks";
 
-type TaskWithStatus = Task & { id?: string; status: "In Progress" | "Pending" | "Completed" };
-
-const initialTasks: TaskWithStatus[] = [
-  {
-    title: "Field Investigation",
-    location: "Pune, Maharashtra",
-    distance: "2.4 km",
-    time: "10:30 AM - 12:30 PM",
-    priority: "HIGH",
-    tone: "blue",
-    icon: "search",
-    action: "filled",
-    status: "In Progress",
-  },
-  {
-    title: "Document Collection",
-    location: "Pimpri-Chinchwad, Maharashtra",
-    distance: "5.7 km",
-    time: "01:00 PM - 03:00 PM",
-    priority: "MEDIUM",
-    tone: "green",
-    icon: "document",
-    action: "filled",
-    status: "In Progress",
-  },
-  {
-    title: "KYC Verification",
-    location: "Pune, Maharashtra",
-    distance: "6.1 km",
-    time: "03:30 PM - 05:00 PM",
-    priority: "HIGH",
-    tone: "purple",
-    icon: "id",
-    action: "outline",
-    status: "Pending",
-  },
-  {
-    title: "Legal Verification",
-    location: "Hinjewadi, Maharashtra",
-    distance: "7.8 km",
-    time: "Tomorrow",
-    priority: "LOW",
-    tone: "orange",
-    icon: "scale",
-    action: "outline",
-    status: "Pending",
-  },
-  {
-    title: "Additional Doc Collection",
-    location: "Pune, Maharashtra",
-    distance: "9.3 km",
-    time: "Tomorrow",
-    priority: "MEDIUM",
-    tone: "cyan",
-    icon: "folder",
-    action: "outline",
-    status: "Pending",
-  },
-  {
-    title: "Asset Valuation",
-    location: "Kothrud, Pune",
-    distance: "4.2 km",
-    time: "10:00 AM - 11:30 AM",
-    priority: "HIGH",
-    tone: "blue",
-    icon: "search",
-    action: "outline",
-    status: "Pending",
-  },
-  {
-    title: "Signature Verification",
-    location: "Aundh, Pune",
-    distance: "8.1 km",
-    time: "12:00 PM - 01:30 PM",
-    priority: "MEDIUM",
-    tone: "green",
-    icon: "document",
-    action: "outline",
-    status: "Pending",
-  },
-  {
-    title: "Background Check",
-    location: "Baner, Pune",
-    distance: "5.3 km",
-    time: "02:00 PM - 03:30 PM",
-    priority: "LOW",
-    tone: "orange",
-    icon: "scale",
-    action: "outline",
-    status: "Pending",
-  },
-  {
-    title: "Final Approval Upload",
-    location: "Viman Nagar, Pune",
-    distance: "11.5 km",
-    time: "Tomorrow",
-    priority: "HIGH",
-    tone: "purple",
-    icon: "folder",
-    action: "outline",
-    status: "Pending",
-  },
-];
-
-function loadCreatedTasks(): TaskWithStatus[] {
-  try {
-    const saved = JSON.parse(localStorage.getItem("agent-created-tasks") || "[]") as Array<{
-      address?: string;
-      distance?: string;
-      id?: string;
-      priority?: string;
-      slot?: string;
-      title?: string;
-      type?: string;
-    }>;
-
-    return saved.map((task) => ({
-      action: "outline",
-      distance: task.distance || "2.4 km",
-      icon: task.type === "Document Collection" ? "document" : "search",
-      id: task.id,
-      location: task.address || "Pune, Maharashtra",
-      priority: task.priority === "Low" ? "LOW" : task.priority === "Medium" ? "MEDIUM" : "HIGH",
-      status: "Pending",
-      time: task.slot || "Today",
-      title: task.title || "New Field Task",
-      tone: task.priority === "Medium" ? "orange" : task.priority === "Low" ? "green" : "blue",
-    }));
-  } catch {
-    return [];
-  }
-}
+type TaskWithStatus = AgentTaskRecord;
+type StatusFilter = AgentTaskStatus | "All";
+type PriorityFilter = Task["priority"] | "All";
 
 const toneStyles: Record<Tone, { accent: string; card: string; iconBg: string; soft: string; text: string }> = {
   blue: {
@@ -189,6 +69,8 @@ const statusStyles = {
   Completed: "bg-[#ecfaef] text-[#088d27]",
   "In Progress": "bg-[#fff2e4] text-[#e58000]",
   Pending: "bg-[#f3f4f6] text-[#5c6a85]",
+  Rejected: "bg-[#fff0ef] text-[#ee0f1a]",
+  Cancelled: "bg-[#edf2f7] text-[#5c6a85]",
 };
 
 function LocationIcon() {
@@ -350,7 +232,11 @@ interface AgentMyTasksProps {
 export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
   const [activeTab, setActiveTab] = useState<"today" | "upcoming" | "overdue">("today");
   const [searchQuery, setSearchQuery] = useState("");
-  const [tasks] = useState<TaskWithStatus[]>(() => [...loadCreatedTasks(), ...initialTasks]);
+  const [tasks, setTasks] = useState<TaskWithStatus[]>(() => loadAgentTasks());
+  const [showFilters, setShowFilters] = useState(false);
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("All");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
+  const [sortMode, setSortMode] = useState<"time" | "distance" | "priority">("time");
   const summaries = useMemo<SummaryCard[]>(() => {
     const countByStatus = (status: TaskWithStatus["status"]) => tasks.filter((task) => task.status === status).length;
 
@@ -362,18 +248,48 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
     ];
   }, [tasks]);
 
-  const filteredTasks = tasks.filter((task) => {
-    // Show first 5 tasks under Today, and let search filter them
-    const matchesSearch = task.title.toLowerCase().includes(searchQuery.toLowerCase());
-    if (activeTab === "today") {
-      return matchesSearch;
+  const filteredTasks = useMemo(() => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    const priorityRank = { HIGH: 0, MEDIUM: 1, LOW: 2 };
+
+    return tasks
+      .filter((task) => {
+        const searchable = `${task.title} ${task.customer} ${task.id} ${task.location} ${task.address}`.toLowerCase();
+        const matchesSearch = !normalizedQuery || searchable.includes(normalizedQuery);
+        const matchesPriority = priorityFilter === "All" || task.priority === priorityFilter;
+        const matchesStatus = statusFilter === "All" || task.status === statusFilter;
+
+        if (!matchesSearch || !matchesPriority || !matchesStatus) return false;
+        if (activeTab === "today") return task.date === "Today" && !isTerminalStatus(task.status);
+        if (activeTab === "upcoming") return task.date !== "Today" && !isTerminalStatus(task.status);
+        return isTerminalStatus(task.status);
+      })
+      .sort((first, second) => {
+        if (sortMode === "distance") return first.distanceValue - second.distanceValue;
+        if (sortMode === "priority") return priorityRank[first.priority] - priorityRank[second.priority];
+        return first.slot.localeCompare(second.slot);
+      });
+  }, [activeTab, priorityFilter, searchQuery, sortMode, statusFilter, tasks]);
+
+  const selectTask = (task: TaskWithStatus, step: Step = "task-details") => {
+    setActiveAgentTaskId(task.id);
+    onNavigate?.(step);
+  };
+
+  const updateStatus = (task: TaskWithStatus, status: AgentTaskStatus) => {
+    const updated = updateAgentTask(task.id, {
+      action: status === "In Progress" ? "filled" : "outline",
+      status,
+    });
+    if (updated) {
+      setTasks((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      setActiveAgentTaskId(updated.id);
     }
-    // Simple demo filter for other tabs
-    if (activeTab === "upcoming") {
-      return matchesSearch && task.time === "Tomorrow";
-    }
-    return false; // Overdue starts empty
-  });
+  };
+
+  const removeTask = (id: string) => {
+    setTasks(deleteAgentTask(id));
+  };
 
   return (
     <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden animate-slide-up">
@@ -443,8 +359,10 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
             />
           </div>
           <button
+            onClick={() => setShowFilters((current) => !current)}
             type="button"
             className="flex items-center gap-1.5 h-10 px-3.5 border border-[#d5dbe5] rounded-xl bg-white text-xs font-bold text-[#1158d4] cursor-pointer hover:bg-slate-50 flex-none"
+            aria-pressed={showFilters}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4 flex-none">
               <line x1="4" y1="21" x2="4" y2="14" />
@@ -461,6 +379,61 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
           </button>
         </div>
 
+        {showFilters ? (
+          <section className="mt-3 rounded-[16px] border border-[#edf1f5] bg-[#fbfdff] p-3 shadow-sm flex-none">
+            <div className="grid grid-cols-2 gap-3">
+              <label className="text-left">
+                <span className="mb-1 block text-[10px] font-bold uppercase text-[#5c6a85]">Status</span>
+                <select
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+                  className="h-10 w-full rounded-xl border border-[#d8e0eb] bg-white px-3 text-xs font-bold text-[#07183f] outline-none"
+                >
+                  {(["All", "Pending", "In Progress", "Completed", "Rejected", "Cancelled"] as StatusFilter[]).map((status) => (
+                    <option key={status}>{status}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-left">
+                <span className="mb-1 block text-[10px] font-bold uppercase text-[#5c6a85]">Priority</span>
+                <select
+                  value={priorityFilter}
+                  onChange={(event) => setPriorityFilter(event.target.value as PriorityFilter)}
+                  className="h-10 w-full rounded-xl border border-[#d8e0eb] bg-white px-3 text-xs font-bold text-[#07183f] outline-none"
+                >
+                  {(["All", "HIGH", "MEDIUM", "LOW"] as PriorityFilter[]).map((priority) => (
+                    <option key={priority}>{priority}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <select
+                value={sortMode}
+                onChange={(event) => setSortMode(event.target.value as "time" | "distance" | "priority")}
+                className="h-10 flex-1 rounded-xl border border-[#d8e0eb] bg-white px-3 text-xs font-bold text-[#07183f] outline-none"
+                aria-label="Sort tasks"
+              >
+                <option value="time">Sort by start time</option>
+                <option value="distance">Sort by distance</option>
+                <option value="priority">Sort by priority</option>
+              </select>
+              <button
+                onClick={() => {
+                  setPriorityFilter("All");
+                  setStatusFilter("All");
+                  setSortMode("time");
+                  setSearchQuery("");
+                }}
+                type="button"
+                className="h-10 rounded-xl border border-[#d8e0eb] bg-white px-3 text-xs font-bold text-[#1158d4]"
+              >
+                Reset
+              </button>
+            </div>
+          </section>
+        ) : null}
+
         {/* Summary Metrics Grid */}
         <section className="mt-4 grid grid-cols-4 gap-2.5 w-full flex-none">
           {summaries.map((item) => {
@@ -476,7 +449,15 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
                 <strong className="text-base font-bold leading-none text-[#050a16] mt-1">
                   {item.count}
                 </strong>
-                <button type="button" className={`flex items-center gap-0.5 text-[9px] font-bold leading-none mt-1.5 cursor-pointer ${tone.text}`} aria-label={`View all ${item.label.toLowerCase()}`}>
+                <button
+                  onClick={() => {
+                    setActiveTab(item.label === "Completed" ? "overdue" : "today");
+                    setStatusFilter(item.label === "Total Tasks" ? "All" : (item.label as StatusFilter));
+                  }}
+                  type="button"
+                  className={`flex items-center gap-0.5 text-[9px] font-bold leading-none mt-1.5 cursor-pointer ${tone.text}`}
+                  aria-label={`View all ${item.label.toLowerCase()}`}
+                >
                   View all
                   <ChevronRight />
                 </button>
@@ -488,10 +469,14 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
         {/* Today's Tasks Section Title */}
         <div className="flex items-center justify-between mt-4 w-full flex-none px-1">
           <h2 className="text-sm font-bold text-[#07183f]">
-            Today's Tasks ({filteredTasks.length})
+            {activeTab === "today" ? "Today's Tasks" : activeTab === "upcoming" ? "Upcoming Tasks" : "Closed Tasks"} ({filteredTasks.length})
           </h2>
-          <button type="button" className="flex items-center gap-1 text-[11px] font-bold text-[#1158d4] bg-[#edf4ff] px-2.5 py-1 rounded-lg cursor-pointer border-0">
-            Sort by: Start Time v
+          <button
+            onClick={() => setSortMode((current) => (current === "time" ? "distance" : current === "distance" ? "priority" : "time"))}
+            type="button"
+            className="flex items-center gap-1 text-[11px] font-bold text-[#1158d4] bg-[#edf4ff] px-2.5 py-1 rounded-lg cursor-pointer border-0"
+          >
+            Sort: {sortMode === "time" ? "Start Time" : sortMode === "distance" ? "Distance" : "Priority"}
           </button>
         </div>
 
@@ -505,8 +490,8 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
                 const tone = toneStyles[task.tone];
                 return (
                   <article
-                    key={task.id ?? `${task.title}-${task.location}-${task.time}`}
-                    onClick={() => onNavigate?.("task-details")}
+                    key={task.id}
+                    onClick={() => selectTask(task)}
                     className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 border border-[#edf1f5] rounded-[18px] bg-white shadow-sm relative cursor-pointer hover:bg-slate-50/50"
                   >
                     <div className="flex items-start gap-3 min-w-[200px] flex-1">
@@ -535,6 +520,9 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
                           <ClockIcon />
                           <span className="truncate">{task.time}</span>
                         </div>
+                        <p className="mt-1.5 truncate text-[10px] font-bold leading-none text-[#8f98a8]">
+                          {task.customer} . #{task.id}
+                        </p>
                       </div>
                     </div>
 
@@ -545,6 +533,11 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
                         </span>
                         
                         <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (task.status === "Pending") updateStatus(task, "In Progress");
+                            selectTask(task, task.status === "Completed" || task.status === "Rejected" || task.status === "Cancelled" ? "task-details" : "task-in-progress");
+                          }}
                           type="button"
                           className={
                             task.status === "In Progress"
@@ -552,16 +545,22 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
                               : "border border-[#1158d4] text-[#1158d4] bg-white hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md flex items-center justify-center w-[76px] cursor-pointer"
                           }
                         >
-                          <span>{task.status === "In Progress" ? "Continue" : "Start Task"}</span>
+                          <span>{task.status === "In Progress" ? "Continue" : task.status === "Pending" ? "Start Task" : "View"}</span>
                           {task.status === "In Progress" && <span className="text-[10px] font-bold">&gt;</span>}
                         </button>
                       </div>
                       
-                      <button type="button" className="text-slate-400 hover:text-slate-600 cursor-pointer p-1 self-start mt-0.5 flex-none">
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          removeTask(task.id);
+                        }}
+                        type="button"
+                        aria-label={`Delete ${task.title}`}
+                        className="text-slate-400 hover:text-[#ee0f1a] cursor-pointer p-1 self-start mt-0.5 flex-none"
+                      >
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
-                          <circle cx="12" cy="5" r="1.5" fill="currentColor" />
-                          <circle cx="12" cy="12" r="1.5" fill="currentColor" />
-                          <circle cx="12" cy="19" r="1.5" fill="currentColor" />
+                          <path d="M3 6h18M8 6V4h8v2M10 11v6M14 11v6M6 6l1 15h10l1-15" />
                         </svg>
                       </button>
                     </div>

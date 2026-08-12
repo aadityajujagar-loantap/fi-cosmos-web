@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Step } from "../../../types";
+import { getActiveAgentTask, isTerminalStatus, updateAgentTask, type AgentTaskRecord } from "../utils/tasks";
 
 interface DetailItemProps {
   icon: React.ReactNode;
@@ -35,13 +36,20 @@ interface AgentTaskDetailsProps {
 }
 
 export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) {
-  const [isAccepted, setIsAccepted] = useState(() => {
-    return localStorage.getItem("task_accepted_T123456") === "true";
-  });
+  const [task, setTask] = useState<AgentTaskRecord>(() => getActiveAgentTask());
+  const [isAccepted, setIsAccepted] = useState(() => task.status === "In Progress" || task.status === "Completed");
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState("Out of Area");
   const [customReason, setCustomReason] = useState("");
   const [popupMsg, setPopupMsg] = useState("");
+  const isClosed = isTerminalStatus(task.status);
+  const priorityClass =
+    task.priority === "LOW"
+      ? "bg-[#f0fff4] text-[#088d27]"
+      : task.priority === "MEDIUM"
+        ? "bg-[#fff7f0] text-[#e58000]"
+        : "bg-[#fff0ef] text-[#ee0f1a]";
+  const telHref = `tel:+${task.mobile.replace(/\D/g, "")}`;
 
   const triggerPopup = (msg: string) => {
     setPopupMsg(msg);
@@ -49,14 +57,21 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
   };
 
   const handleAccept = () => {
-    localStorage.setItem("task_accepted_T123456", "true");
+    const updated = updateAgentTask(task.id, { action: "filled", status: "In Progress" });
+    if (updated) setTask(updated);
     setIsAccepted(true);
     triggerPopup("Case accepted successfully!");
   };
 
   const handleRejectConfirm = () => {
-    localStorage.setItem("task_rejected_T123456", "true");
-    localStorage.removeItem("task_accepted_T123456");
+    const reason = rejectReason === "Other Reason" ? customReason.trim() || "Other Reason" : rejectReason;
+    const updated = updateAgentTask(task.id, {
+      action: "outline",
+      rejectReason: `Reason: ${reason}.`,
+      status: "Rejected",
+    });
+    if (updated) setTask(updated);
+    setIsAccepted(false);
     setShowRejectModal(false);
     triggerPopup("Case rejected successfully.");
     setTimeout(() => {
@@ -77,7 +92,7 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
           <div className="w-full max-w-sm bg-white rounded-3xl p-5 shadow-2xl text-left flex flex-col gap-4 animate-scale-up">
             <h3 className="text-sm font-bold text-[#07183f] m-0">Reject Case Assignment</h3>
             <p className="m-0 text-[11px] text-[#5c6a85] leading-normal">
-              Please specify the reason for rejecting case #T123456. This action is irreversible.
+              Please specify the reason for rejecting case #{task.id}. This action is irreversible.
             </p>
 
             <div className="flex flex-col gap-2">
@@ -130,7 +145,7 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
         </div>
       )}
 
-      <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-4 justify-start relative h-full overflow-hidden">
+      <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-[max(16px,env(safe-area-inset-bottom))] justify-start h-full min-h-0 overflow-hidden">
         
         {/* Header */}
         <header className="relative flex items-center justify-center h-12 w-full flex-none">
@@ -159,25 +174,25 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
         </header>
 
         {/* Scrollable Container */}
-        <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full mt-2 flex flex-col gap-4 pb-16">
+        <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full mt-2 flex flex-col gap-4 pb-4">
           
           {/* Title Row */}
           <div className="flex items-center justify-between border border-[#e6ebf1] rounded-[18px] bg-slate-50/50 p-4 shadow-sm w-full flex-none text-left">
             <div className="flex items-center gap-2">
-              <span className="bg-[#fff0ef] text-[#ee0f1a] font-bold text-[9px] px-1.5 py-0.5 rounded uppercase">
-                HIGH
+              <span className={`${priorityClass} font-bold text-[9px] px-1.5 py-0.5 rounded uppercase`}>
+                {task.priority}
               </span>
-              <h2 className="text-sm font-bold text-[#07183f]">Field Investigation</h2>
+              <h2 className="text-sm font-bold text-[#07183f]">{task.title}</h2>
             </div>
-            <span className="text-xs font-bold text-[#8f98a8]">#T123456</span>
+            <span className="text-xs font-bold text-[#8f98a8]">#{task.id}</span>
           </div>
 
           {/* Details Card */}
           <div className="border border-[#edf1f5] rounded-[18px] bg-white shadow-sm overflow-hidden flex flex-col w-full flex-none">
             <DetailItem
               label="Location"
-              value="Pune, Maharashtra"
-              valueRight="2.4 km"
+              value={task.location}
+              valueRight={task.distance}
               icon={
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
                   <path d="M12 21s7-5.2 7-12a7 7 0 0 0-14 0c0 6.8 7 12 7 12Z" />
@@ -187,8 +202,8 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
             />
             <DetailItem
               label="Scheduled Time"
-              value="10:30 AM - 12:30 PM"
-              subtitle="Today, 16 May 2025"
+              value={task.timeRange}
+              subtitle={task.date}
               icon={
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
                   <circle cx="12" cy="12" r="10" />
@@ -198,7 +213,7 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
             />
             <DetailItem
               label="Customer Name"
-              value="Amit Deshmukh"
+              value={task.customer}
               icon={
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
@@ -208,7 +223,7 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
             />
             <DetailItem
               label="Mobile Number"
-              value="+91 98765 43210"
+              value={task.mobile}
               icon={
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
                   <rect x="5" y="2" width="14" height="20" rx="2" />
@@ -217,7 +232,7 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
               }
               actionButton={
                 <a
-                  href="tel:+919876543210"
+                  href={telHref}
                   className="grid w-8 h-8 place-items-center rounded-full bg-[#ecfaef] text-[#088d27] hover:scale-105 transition-transform"
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
@@ -228,7 +243,7 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
             />
             <DetailItem
               label="Address"
-              value="102, Sai Residency, Baner Road, Baner Road, Pune - 411045"
+              value={task.address}
               icon={
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
                   <path d="M3 21h18M3 7v1a3 3 0 0 0 6 0v-1m0 1a3 3 0 0 0 6 0v-1m0 1a3 3 0 0 0 6 0v-1M4 21V4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v17" />
@@ -248,7 +263,7 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
             />
             <DetailItem
               label="Task Description"
-              value="Visit customer location and verify the details. Capture photo and collect required information."
+              value={`Complete ${task.type.toLowerCase()} for ${task.customer}. Capture required proofs and submit the checklist.`}
               icon={
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -264,24 +279,18 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
           <div className="border border-[#edf1f5] rounded-[18px] bg-white shadow-sm p-4 flex flex-col w-full flex-none text-left">
             <div className="flex items-center justify-between w-full border-b border-[#edf1f5] pb-3 mb-2">
               <h3 className="text-xs font-bold text-[#07183f]">Required Checklist</h3>
-              <span className="text-[10px] font-bold text-[#8f98a8]">0/5 Completed</span>
+              <span className="text-[10px] font-bold text-[#8f98a8]">{task.status === "Completed" ? task.checklist.length : 0}/{task.checklist.length} Completed</span>
             </div>
             
             <div className="flex flex-col">
-              {[
-                "Visit Customer Location",
-                "Capture Customer Photo",
-                "Verify Address",
-                "Capture Documents",
-                "Customer Signature"
-              ].map((step, idx) => (
+              {task.checklist.map((step, idx) => (
                 <div key={step} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-b-0 text-xs">
                   <div className="flex items-center gap-3">
-                    <div className="w-4 h-4 rounded-full border border-slate-300 flex-none" />
+                    <div className={`w-4 h-4 rounded-full flex-none ${task.status === "Completed" ? "bg-[#ecfaef] border border-[#088d27]" : "border border-slate-300"}`} />
                     <span className="font-bold text-[#5c6a85]">{idx + 1}. {step}</span>
                   </div>
                   <span className="bg-[#edf2f7] text-[#5c6a85] font-bold text-[9px] px-2 py-0.5 rounded-full">
-                    Pending
+                    {task.status === "Completed" ? "Done" : "Pending"}
                   </span>
                 </div>
               ))}
@@ -291,8 +300,16 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
         </div>
 
         {/* Floating Footer Shutter */}
-        <div className="absolute bottom-4 left-5 right-5 z-20 w-[calc(100%-40px)] max-w-[390px] mx-auto flex items-center gap-3 flex-none">
-          {isAccepted ? (
+        <footer className="flex flex-none items-center gap-3 border-t border-[#eef2f6] bg-white pt-3">
+          {isClosed ? (
+            <button
+              onClick={onBack}
+              type="button"
+              className="w-full bg-[#07183f] text-white hover:bg-[#0f1f45] h-12 rounded-[14px] font-bold text-sm flex items-center justify-center cursor-pointer shadow-lg border-0"
+            >
+              Back to Tasks
+            </button>
+          ) : isAccepted ? (
             <button
               onClick={() => onNavigate?.("task-in-progress")}
               type="button"
@@ -323,7 +340,7 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
               </button>
             </>
           )}
-        </div>
+        </footer>
 
       </div>
     </section>
