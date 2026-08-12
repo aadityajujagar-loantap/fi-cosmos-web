@@ -1,3 +1,3 @@
 export default function App() {
-  return <div>App</div>;
+  return <main className="min-h-screen bg-white" />;
 }
