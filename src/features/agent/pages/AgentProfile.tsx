@@ -157,7 +157,7 @@ interface AgentProfileProps {
 export function AgentProfile({ onNavigate, onLogout }: AgentProfileProps) {
   return (
     <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden animate-slide-up">
-      <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-20 justify-start relative h-full overflow-hidden">
+      <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-20 justify-start relative overflow-hidden">
         
         {/* Header */}
         <header className="relative flex items-center justify-center h-12 w-full flex-none">
@@ -172,7 +172,7 @@ export function AgentProfile({ onNavigate, onLogout }: AgentProfileProps) {
               <line x1="2" y1="12" x2="22" y2="12" />
               <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
             </svg>
-            <span>English</span>
+            <span data-language-label data-no-translate>English</span>
             <svg viewBox="0 0 12 12" className="h-3 w-3 text-[#102f6c]" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" aria-hidden="true">
               <path d="m3 4.5 3 3 3-3" />
             </svg>
@@ -206,7 +206,7 @@ export function AgentProfile({ onNavigate, onLogout }: AgentProfileProps) {
           </section>
 
           {/* Menu Card */}
-          <section className="border border-[#edf1f5] rounded-[18px] bg-white shadow-sm overflow-hidden flex flex-col">
+          <section className="border border-[#edf1f5] rounded-[18px] bg-white shadow-sm overflow-hidden flex flex-col flex-none">
             <MenuRow
               onClick={() => onNavigate?.("personal-info")}
               title="Personal Information"
@@ -301,9 +301,10 @@ export function AgentProfile({ onNavigate, onLogout }: AgentProfileProps) {
           <button
             onClick={onLogout}
             type="button"
-            className="flex items-center justify-center gap-2 w-full h-11 border border-[#ffd5d4] hover:bg-[#fff5f5] active:bg-[#ffe3e2] rounded-xl text-xs font-bold text-red-500 cursor-pointer bg-white transition-colors"
+            aria-label="Logout"
+            className="flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl border border-[#ffd2d2] bg-[#fff5f5] px-4 text-sm font-bold text-[#d92027] shadow-sm transition-colors hover:bg-[#ffeaea] active:bg-[#ffe0df]"
           >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-5 w-5">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
             </svg>
             Logout

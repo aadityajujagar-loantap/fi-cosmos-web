@@ -163,9 +163,10 @@ export function AgentMenu({ onBack, onLogout, onNavigate }: AgentMenuProps) {
           <button
             onClick={onLogout}
             type="button"
-            className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#ffd5d4] bg-white text-xs font-bold text-red-500 hover:bg-[#fff5f5]"
+            aria-label="Logout"
+            className="mt-4 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-2xl border border-[#ffd2d2] bg-[#fff5f5] px-4 text-sm font-bold text-[#d92027] shadow-sm transition-colors hover:bg-[#ffeaea] active:bg-[#ffe0df]"
           >
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.4" aria-hidden="true">
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.4" aria-hidden="true">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
             </svg>
             Logout

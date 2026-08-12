@@ -107,7 +107,7 @@ export function AgentLogin({ onSendOtp }: AgentLoginProps) {
                 <line x1="2" y1="12" x2="22" y2="12" />
                 <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
               </svg>
-              <span>English</span>
+              <span data-language-label data-no-translate>English</span>
               <svg viewBox="0 0 12 12" className="h-3 w-3 text-[#102f6c]" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" aria-hidden="true">
                 <path d="m3 4.5 3 3 3-3" />
               </svg>

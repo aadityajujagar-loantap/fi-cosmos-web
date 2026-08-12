@@ -381,7 +381,7 @@ interface AgentHomeProps {
 export function AgentHome({ onNavigate }: AgentHomeProps) {
   return (
     <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden animate-slide-up">
-      <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-20 justify-start relative h-full overflow-hidden">
+      <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-20 justify-start relative overflow-hidden">
         
         {/* Header */}
         <header className="flex w-full items-center justify-between gap-3 flex-none">

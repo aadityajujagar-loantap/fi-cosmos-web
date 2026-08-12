@@ -27,6 +27,7 @@ import { AdminPlaceholder } from "./features/admin/pages/AdminPlaceholder";
 import { Popup } from "./components/ui/Popup";
 import { verifyMobileNumber, verifyOtpCode } from "./services/auth";
 import type { Step } from "./types";
+import { I18nProvider } from "./features/agent/i18n";
 
 function AgentApp() {
   const [step, setStep] = useState<Step>(() => {
@@ -85,12 +86,13 @@ function AgentApp() {
   };
 
   return (
-    <MobileWrapper>
-      {popup ? <Popup message={popup} /> : null}
+    <I18nProvider>
+      <MobileWrapper>
+        {popup ? <Popup message={popup} /> : null}
       
-      {step === "login" ? (
-        <AgentLogin onSendOtp={handleSendOtp} />
-      ) : null}
+        {step === "login" ? (
+          <AgentLogin onSendOtp={handleSendOtp} />
+        ) : null}
 
       {step === "otp" ? (
         <AgentOtp
@@ -242,14 +244,15 @@ function AgentApp() {
         />
       ) : null}
 
-      {step === "customer-signature" ? (
-        <AgentCustomerSignature
-          onBack={() => setStep(prevStep)}
-          completedStepsCount={completedStepsCount}
-          setCompletedStepsCount={setCompletedStepsCount}
-        />
-      ) : null}
-    </MobileWrapper>
+        {step === "customer-signature" ? (
+          <AgentCustomerSignature
+            onBack={() => setStep(prevStep)}
+            completedStepsCount={completedStepsCount}
+            setCompletedStepsCount={setCompletedStepsCount}
+          />
+        ) : null}
+      </MobileWrapper>
+    </I18nProvider>
   );
 }
 

@@ -35,6 +35,25 @@ body,
   background: #ffffff;
 }
 
+button,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus,
+button:focus-visible,
+input:focus,
+input:focus-visible,
+select:focus,
+select:focus-visible,
+textarea:focus,
+textarea:focus-visible {
+  outline: 0 !important;
+  box-shadow: none !important;
+}
+
 /* Animations */
 @keyframes slideInLeft {
   from {
@@ -76,4 +95,3 @@ body,
 .animate-fade-in {
   animation: fadeIn 0.25s ease-out forwards;
 }
-
