@@ -65,7 +65,7 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
   };
   
   return (
-    <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden">
+    <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden animate-slide-up">
       {popupMsg && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-50 bg-[#07183f] text-white text-xs font-bold px-4 py-2.5 rounded-full shadow-lg transition-all animate-bounce">
           {popupMsg}

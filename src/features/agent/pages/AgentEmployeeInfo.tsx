@@ -11,14 +11,14 @@ interface InfoRowProps {
 
 function InfoRow({ icon, label, value, iconColorClass = "text-[#1158d4]", iconBgClass = "bg-[#edf5ff]" }: InfoRowProps) {
   return (
-    <div className="flex items-start justify-between gap-4 py-3 px-4 border-b border-[#edf1f5] last:border-b-0 text-xs">
-      <div className="flex items-center gap-3.5 min-w-0">
-        <div className={`grid w-8 h-8 place-items-center rounded-full flex-none ${iconBgClass} ${iconColorClass}`}>
-          {icon}
-        </div>
-        <p className="m-0 font-bold text-[#8f98a8] leading-none whitespace-nowrap">{label}</p>
+    <div className="flex items-start gap-3.5 py-3 px-4 border-b border-[#edf1f5] last:border-b-0 text-xs">
+      <div className={`grid w-8 h-8 place-items-center rounded-full flex-none ${iconBgClass} ${iconColorClass}`}>
+        {icon}
       </div>
-      <p className="m-0 font-bold text-[#07183f] text-right max-w-[60%] leading-relaxed break-words">{value}</p>
+      <div className="flex-1 min-w-0 flex flex-col gap-0.5 text-left">
+        <span className="text-[10px] font-bold text-[#8f98a8] uppercase tracking-wider">{label}</span>
+        <span className="text-xs font-bold text-[#07183f] break-words leading-relaxed">{value}</span>
+      </div>
     </div>
   );
 }
@@ -73,7 +73,7 @@ interface AgentEmployeeInfoProps {
 
 export function AgentEmployeeInfo({ onBack, onNavigate }: AgentEmployeeInfoProps) {
   return (
-    <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden">
+    <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden animate-slide-up">
       <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-20 justify-start relative h-full overflow-hidden">
         
         {/* Header */}
@@ -107,7 +107,7 @@ export function AgentEmployeeInfo({ onBack, onNavigate }: AgentEmployeeInfoProps
         </header>
 
         {/* Scrollable Container */}
-        <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full mt-2 flex flex-col gap-4 pb-4">
+        <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full mt-2 flex flex-col gap-4 pb-28">
           
           {/* Profile Card */}
           <AgentProfileCard />

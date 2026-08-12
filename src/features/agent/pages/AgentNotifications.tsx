@@ -143,7 +143,7 @@ export function AgentNotifications({ onBack, onNavigate }: AgentNotificationsPro
   const [push, setPush] = useState(true);
 
   return (
-    <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden">
+    <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden animate-slide-up">
       <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-20 justify-start relative h-full overflow-hidden">
         
         {/* Header */}
@@ -177,7 +177,7 @@ export function AgentNotifications({ onBack, onNavigate }: AgentNotificationsPro
         </header>
 
         {/* Scrollable container for Settings */}
-        <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full mt-2 flex flex-col gap-4 pb-4">
+        <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full mt-2 flex flex-col gap-4 pb-28">
           
           {/* Profile Card */}
           <AgentProfileCard />

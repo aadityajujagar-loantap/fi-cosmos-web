@@ -67,17 +67,23 @@ interface AgentLoginProps {
 
 export function AgentLogin({ onSendOtp }: AgentLoginProps) {
   const [mobileNumber, setMobileNumber] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleMobileChange = (e: ChangeEvent<HTMLInputElement>) => {
     setMobileNumber(e.target.value.replace(/\D/g, "").slice(0, 10));
   };
 
   const handleSubmit = () => {
-    onSendOtp(mobileNumber);
+    if (mobileNumber.length < 10) return;
+    setIsLoading(true);
+    window.setTimeout(() => {
+      setIsLoading(false);
+      onSendOtp(mobileNumber);
+    }, 1000); // 1-second simulated delay
   };
 
   return (
-    <section className="relative flex flex-col flex-1 bg-gradient-to-b from-white via-white via-[80%] to-[#eef8ff] min-h-screen h-[100dvh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+    <section className="relative flex flex-col flex-1 bg-gradient-to-b from-white via-white via-[80%] to-[#eef8ff] min-h-screen h-[100dvh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] animate-fade-in">
       <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-8 py-6 justify-between items-center relative min-h-screen">
         {/* Top Section (Language & Brand Header) */}
         <div className="w-full flex flex-col items-center flex-none relative z-20">
@@ -151,8 +157,18 @@ export function AgentLogin({ onSendOtp }: AgentLoginProps) {
               value={mobileNumber}
             />
 
-            <Button onClick={handleSubmit} className="mt-5">
-              Send OTP
+            <Button onClick={handleSubmit} className="mt-5 flex items-center justify-center gap-2">
+              {isLoading ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                  </svg>
+                  <span>Sending code...</span>
+                </>
+              ) : (
+                <span>Send OTP</span>
+              )}
             </Button>
           </Card>
 

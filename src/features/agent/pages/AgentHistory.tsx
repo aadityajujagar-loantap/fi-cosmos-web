@@ -223,7 +223,7 @@ export function AgentHistory({ onNavigate }: AgentHistoryProps) {
   });
 
   return (
-    <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden">
+    <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden animate-slide-up">
       <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-20 justify-start relative h-full overflow-hidden">
         
         {/* Header */}
@@ -304,7 +304,7 @@ export function AgentHistory({ onNavigate }: AgentHistoryProps) {
           <h2 className="text-xs font-bold text-[#5c6a85] text-left mb-2 px-1 flex-none">Recent Activity</h2>
           
           {/* Scrollable body */}
-          <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full flex flex-col gap-3 pb-4">
+          <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full flex flex-col gap-3 pb-28">
             {filteredTasks.length === 0 ? (
               <div className="text-center py-8 text-xs text-slate-400 bg-white border border-[#edf1f5] rounded-[18px]">
                 No history logs found.
@@ -373,21 +373,15 @@ export function AgentHistory({ onNavigate }: AgentHistoryProps) {
             )}
 
             {/* Pagination Footer */}
-            {filteredTasks.length > 0 && (
+            {filteredTasks.length > 5 && (
               <div className="flex items-center justify-between px-2 py-1 w-full flex-none mt-2">
-                <span className="text-[10px] font-bold text-[#8f98a8]">Showing 1 to 6 of 18 tasks</span>
+                <span className="text-[10px] font-bold text-[#8f98a8]">Showing 1 to {filteredTasks.length} of {filteredTasks.length} tasks</span>
                 <div className="flex items-center gap-1">
                   <button type="button" className="w-6 h-6 rounded-md border border-[#e2e8f0] bg-white grid place-items-center text-slate-400 hover:text-slate-700 cursor-pointer text-xs">
                     &lt;
                   </button>
                   <button type="button" className="w-6 h-6 rounded-md bg-[#1158d4] text-white font-bold grid place-items-center cursor-pointer text-xs border-0">
                     1
-                  </button>
-                  <button type="button" className="w-6 h-6 rounded-md border border-[#e2e8f0] bg-white text-slate-500 hover:text-slate-700 grid place-items-center cursor-pointer text-xs">
-                    2
-                  </button>
-                  <button type="button" className="w-6 h-6 rounded-md border border-[#e2e8f0] bg-white text-slate-500 hover:text-slate-700 grid place-items-center cursor-pointer text-xs">
-                    3
                   </button>
                   <button type="button" className="w-6 h-6 rounded-md border border-[#e2e8f0] bg-white grid place-items-center text-slate-400 hover:text-slate-700 cursor-pointer text-xs">
                     &gt;

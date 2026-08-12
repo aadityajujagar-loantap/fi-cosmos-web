@@ -108,6 +108,8 @@ export function AgentAddTask({ onBack, onNavigate }: AgentAddTaskProps) {
     });
   };
 
+  const [isCreating, setIsCreating] = useState(false);
+
   const createTask = () => {
     const digits = form.mobile.replace(/\D/g, "");
     if (!form.title.trim() || !form.customer.trim() || !form.address.trim() || digits.length < 10) {
@@ -115,22 +117,26 @@ export function AgentAddTask({ onBack, onNavigate }: AgentAddTaskProps) {
       return;
     }
 
-    const id = `TASK-${Date.now().toString().slice(-6)}`;
-    const payload = {
-      ...form,
-      id,
-      checklist: Array.from(checklist),
-      createdAt: new Date().toISOString(),
-      status: "Pending",
-    };
-    const existing = JSON.parse(localStorage.getItem("agent-created-tasks") || "[]");
-    localStorage.setItem("agent-created-tasks", JSON.stringify([payload, ...existing].slice(0, 20)));
-    setCreatedId(id);
-    setError("");
+    setIsCreating(true);
+    window.setTimeout(() => {
+      setIsCreating(false);
+      const id = `TASK-${Date.now().toString().slice(-6)}`;
+      const payload = {
+        ...form,
+        id,
+        checklist: Array.from(checklist),
+        createdAt: new Date().toISOString(),
+        status: "Pending",
+      };
+      const existing = JSON.parse(localStorage.getItem("agent-created-tasks") || "[]");
+      localStorage.setItem("agent-created-tasks", JSON.stringify([payload, ...existing].slice(0, 20)));
+      setCreatedId(id);
+      setError("");
+    }, 1000);
   };
 
   return (
-    <section className="relative flex h-[100dvh] min-h-screen flex-col overflow-hidden bg-white text-[#07183f]">
+    <section className="relative flex h-[100dvh] min-h-screen flex-col overflow-hidden bg-white text-[#07183f] animate-slide-up">
       <div className="mx-auto flex h-full w-full max-w-[430px] flex-col px-5 pb-5 pt-4">
         <header className="relative flex h-12 flex-none items-center justify-center">
           <button onClick={onBack} type="button" aria-label="Back" className="absolute left-0 grid h-9 w-9 place-items-center rounded-xl bg-white text-[#07183f] hover:bg-slate-50">
@@ -141,7 +147,7 @@ export function AgentAddTask({ onBack, onNavigate }: AgentAddTaskProps) {
           <h1 className="text-lg font-bold">Add Task</h1>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto pb-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <div className="min-h-0 flex-1 overflow-y-auto pb-28 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           {createdId ? (
             <section className="mt-3 rounded-[18px] border border-[#d4f3dd] bg-[#f5fdf7] p-4">
               <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#088d27]">Task created</p>
@@ -203,8 +209,25 @@ export function AgentAddTask({ onBack, onNavigate }: AgentAddTaskProps) {
           <button onClick={createdId ? () => onNavigate?.("my-tasks") : onBack} type="button" className="h-12 flex-1 rounded-xl border border-[#d8e0eb] bg-white text-sm font-bold text-[#07183f]">
             {createdId ? "View Tasks" : "Cancel"}
           </button>
-          <button onClick={createdId ? () => onNavigate?.("home") : createTask} type="button" className="h-12 flex-[1.4] rounded-xl bg-[#1158d4] text-sm font-bold text-white shadow-[0_8px_18px_rgba(17,88,212,0.24)]">
-            {createdId ? "Done" : "Create Task"}
+          <button
+            onClick={createdId ? () => onNavigate?.("home") : createTask}
+            disabled={isCreating}
+            type="button"
+            className="h-12 flex-[1.4] rounded-xl bg-[#1158d4] text-sm font-bold text-white shadow-[0_8px_18px_rgba(17,88,212,0.24)] flex items-center justify-center gap-2 cursor-pointer border-none"
+          >
+            {isCreating ? (
+              <>
+                <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                <span>Creating...</span>
+              </>
+            ) : createdId ? (
+              "Done"
+            ) : (
+              "Create Task"
+            )}
           </button>
         </div>
       </div>

@@ -26,12 +26,22 @@ const panels = {
 type PanelKey = keyof typeof panels;
 
 export function AgentAbout({ onBack }: AgentAboutProps) {
-  const [activePanel, setActivePanel] = useState<PanelKey>("diagnostics");
+  const [activePanel, setActivePanel] = useState<PanelKey>("privacy");
   const [diagnosticsRun, setDiagnosticsRun] = useState(false);
+  const [isDiagnosing, setIsDiagnosing] = useState(false);
   const panel = panels[activePanel];
 
+  const runDiagnosticsSim = () => {
+    setIsDiagnosing(true);
+    setDiagnosticsRun(false);
+    window.setTimeout(() => {
+      setIsDiagnosing(false);
+      setDiagnosticsRun(true);
+    }, 1000);
+  };
+
   return (
-    <section className="relative flex h-[100dvh] min-h-screen flex-col overflow-hidden bg-white text-[#07183f]">
+    <section className="relative flex h-[100dvh] min-h-screen flex-col overflow-hidden bg-white text-[#07183f] animate-slide-up">
       <div className="mx-auto flex h-full w-full max-w-[430px] flex-col px-5 pb-5 pt-4">
         <header className="relative flex h-12 flex-none items-center justify-center">
           <button onClick={onBack} type="button" aria-label="Back" className="absolute left-0 grid h-9 w-9 place-items-center rounded-xl bg-white text-[#07183f] hover:bg-slate-50">
@@ -42,7 +52,7 @@ export function AgentAbout({ onBack }: AgentAboutProps) {
           <h1 className="text-lg font-bold">About FieldOps</h1>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto pb-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <div className="min-h-0 flex-1 overflow-y-auto pb-28 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <section className="mt-3 rounded-[22px] border border-[#d3e5fe] bg-gradient-to-r from-[#f5f9ff] to-[#edf5ff] p-5 text-center">
             <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-white text-[#1158d4] shadow-sm">
               <svg viewBox="0 0 24 24" className="h-9 w-9" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.2" aria-hidden="true">
@@ -107,9 +117,26 @@ export function AgentAbout({ onBack }: AgentAboutProps) {
           <section className="mt-4 rounded-[18px] border border-[#d8e6ff] bg-[#f4f8ff] p-4">
             <h2 className="text-sm font-bold text-[#07183f]">{panel.title}</h2>
             <p className="mt-2 text-xs font-medium leading-relaxed text-[#5c6a85]">{panel.body}</p>
-            {activePanel === "diagnostics" ? (
-              <button onClick={() => setDiagnosticsRun(true)} type="button" className="mt-3 h-10 w-full rounded-xl bg-[#1158d4] text-xs font-bold text-white">
-                {diagnosticsRun ? "Diagnostics Passed" : "Run Diagnostics"}
+             {activePanel === "diagnostics" ? (
+              <button
+                onClick={runDiagnosticsSim}
+                disabled={isDiagnosing}
+                type="button"
+                className="mt-3 h-10 w-full rounded-xl bg-[#1158d4] text-xs font-bold text-white flex items-center justify-center gap-2 cursor-pointer border-none"
+              >
+                {isDiagnosing ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    <span>Running diagnostics...</span>
+                  </>
+                ) : diagnosticsRun ? (
+                  "Diagnostics Passed \u2714"
+                ) : (
+                  "Run Diagnostics"
+                )}
               </button>
             ) : null}
           </section>

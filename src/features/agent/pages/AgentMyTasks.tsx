@@ -376,7 +376,7 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
   });
 
   return (
-    <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden">
+    <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden animate-slide-up">
       <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-20 justify-start relative h-full overflow-hidden">
         
         {/* Header */}
@@ -496,7 +496,7 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
         </div>
 
         {/* Scrollable Tasks list body */}
-        <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full mt-3 flex flex-col gap-3 pb-4">
+        <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full mt-3 flex flex-col gap-3 pb-28">
           
           {filteredTasks.length === 0 ? (
             <div className="text-center py-8 text-xs text-slate-400">No tasks found.</div>
@@ -506,62 +506,66 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
                 return (
                   <article
                     key={task.id ?? `${task.title}-${task.location}-${task.time}`}
-                  onClick={() => onNavigate?.("task-details")}
-                  className="grid grid-cols-[40px_1fr_auto_auto] items-center gap-3 px-4 py-3.5 border border-[#edf1f5] rounded-[18px] bg-white shadow-sm relative cursor-pointer hover:bg-slate-50/50"
-                >
-                  <div className={`grid h-10 w-10 place-items-center rounded-lg flex-none ${tone.iconBg} ${tone.accent}`}>
-                    <TaskIcon icon={task.icon} />
-                  </div>
+                    onClick={() => onNavigate?.("task-details")}
+                    className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 border border-[#edf1f5] rounded-[18px] bg-white shadow-sm relative cursor-pointer hover:bg-slate-50/50"
+                  >
+                    <div className="flex items-start gap-3 min-w-[200px] flex-1">
+                      <div className={`grid h-10 w-10 place-items-center rounded-lg flex-none ${tone.iconBg} ${tone.accent}`}>
+                        <TaskIcon icon={task.icon} />
+                      </div>
 
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold leading-none ${priorityStyles[task.priority]}`}>
-                        {task.priority}
-                      </span>
-                      <h3 className="min-w-0 truncate text-xs font-bold leading-none text-[#07183f]">
-                        {task.title}
-                      </h3>
+                      <div className="min-w-0 flex-1 text-left">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold leading-none ${priorityStyles[task.priority]}`}>
+                            {task.priority}
+                          </span>
+                          <h3 className="min-w-0 truncate text-xs font-bold leading-none text-[#07183f]">
+                            {task.title}
+                          </h3>
+                        </div>
+
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[10px] font-medium leading-none text-[#5c6a85]">
+                          <LocationIcon />
+                          <span className="truncate max-w-[130px] sm:max-w-none">{task.location}</span>
+                          <span className="text-[#a0aec0]">.</span>
+                          <span>{task.distance}</span>
+                        </div>
+
+                        <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold leading-none text-[#1158d4]">
+                          <ClockIcon />
+                          <span className="truncate">{task.time}</span>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="mt-1.5 flex items-center gap-1 text-[10px] font-medium leading-none text-[#5c6a85]">
-                      <LocationIcon />
-                      <span className="truncate">{task.location}</span>
-                      <span className="text-[#a0aec0]">.</span>
-                      <span>{task.distance}</span>
+                    <div className="flex items-center gap-3 flex-none ml-auto">
+                      <div className="flex flex-col items-end gap-2">
+                        <span className={`rounded-md px-2 py-0.5 text-[9px] font-bold leading-none ${statusStyles[task.status]}`}>
+                          {task.status}
+                        </span>
+                        
+                        <button
+                          type="button"
+                          className={
+                            task.status === "In Progress"
+                              ? "bg-[#1158d4] text-white hover:bg-[#0f4ebc] text-[10px] font-bold px-2 py-1.5 rounded-md flex items-center justify-center gap-0.5 w-[76px] shadow-sm cursor-pointer border-0"
+                              : "border border-[#1158d4] text-[#1158d4] bg-white hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md flex items-center justify-center w-[76px] cursor-pointer"
+                          }
+                        >
+                          <span>{task.status === "In Progress" ? "Continue" : "Start Task"}</span>
+                          {task.status === "In Progress" && <span className="text-[10px] font-bold">&gt;</span>}
+                        </button>
+                      </div>
+                      
+                      <button type="button" className="text-slate-400 hover:text-slate-600 cursor-pointer p-1 self-start mt-0.5 flex-none">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
+                          <circle cx="12" cy="5" r="1.5" fill="currentColor" />
+                          <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+                          <circle cx="12" cy="19" r="1.5" fill="currentColor" />
+                        </svg>
+                      </button>
                     </div>
-
-                    <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold leading-none text-[#1158d4]">
-                      <ClockIcon />
-                      <span className="truncate">{task.time}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col items-end gap-2 flex-none">
-                    <span className={`rounded-md px-2 py-0.5 text-[9px] font-bold leading-none ${statusStyles[task.status]}`}>
-                      {task.status}
-                    </span>
-                    
-                    <button
-                      type="button"
-                      className={
-                        task.status === "In Progress"
-                          ? "bg-[#1158d4] text-white hover:bg-[#0f4ebc] text-[10px] font-bold px-2 py-1.5 rounded-md flex items-center justify-center gap-0.5 w-[76px] shadow-sm cursor-pointer border-0"
-                          : "border border-[#1158d4] text-[#1158d4] bg-white hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md flex items-center justify-center w-[76px] cursor-pointer"
-                      }
-                    >
-                      <span>{task.status === "In Progress" ? "Continue" : "Start Task"}</span>
-                      {task.status === "In Progress" && <span className="text-[10px] font-bold">&gt;</span>}
-                    </button>
-                  </div>
-                  
-                  <button type="button" className="text-slate-400 hover:text-slate-600 cursor-pointer p-1 self-start mt-0.5 flex-none">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
-                      <circle cx="12" cy="5" r="1.5" fill="currentColor" />
-                      <circle cx="12" cy="12" r="1.5" fill="currentColor" />
-                      <circle cx="12" cy="19" r="1.5" fill="currentColor" />
-                    </svg>
-                  </button>
-                </article>
+                  </article>
               );
             })
           )}

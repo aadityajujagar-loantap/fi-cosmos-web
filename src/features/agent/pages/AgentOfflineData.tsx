@@ -131,9 +131,17 @@ export function AgentOfflineData({ onBack, onNavigate }: AgentOfflineDataProps) 
   const [autoSync, setAutoSync] = useState(true);
   const [wifiOnly, setWifiOnly] = useState(false);
   const [bgSync, setBgSync] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleSyncNow = () => {
+    setIsSyncing(true);
+    window.setTimeout(() => {
+      setIsSyncing(false);
+    }, 1500);
+  };
 
   return (
-    <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden">
+    <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden animate-slide-up">
       <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-20 justify-start relative h-full overflow-hidden">
         
         {/* Header */}
@@ -167,7 +175,7 @@ export function AgentOfflineData({ onBack, onNavigate }: AgentOfflineDataProps) 
         </header>
 
         {/* Scrollable Container */}
-        <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full mt-2 flex flex-col gap-4 pb-4">
+        <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full mt-2 flex flex-col gap-4 pb-28">
           
           {/* Profile Card */}
           <AgentProfileCard />
@@ -367,9 +375,21 @@ export function AgentOfflineData({ onBack, onNavigate }: AgentOfflineDataProps) 
                 actionButton={
                   <button
                     type="button"
-                    className="border border-[#1158d4] text-[#1158d4] bg-white hover:bg-slate-50 text-[10px] font-bold px-3 py-1.5 rounded-lg flex items-center justify-center cursor-pointer shadow-sm"
+                    onClick={handleSyncNow}
+                    disabled={isSyncing}
+                    className="border border-[#1158d4] text-[#1158d4] bg-white hover:bg-slate-50 text-[10px] font-bold px-3 py-1.5 rounded-lg flex items-center justify-center cursor-pointer shadow-sm gap-1 min-w-[76px]"
                   >
-                    Sync Now
+                    {isSyncing ? (
+                      <>
+                        <svg className="animate-spin h-3.5 w-3.5 text-[#1158d4]" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        <span>Syncing</span>
+                      </>
+                    ) : (
+                      <span>Sync Now</span>
+                    )}
                   </button>
                 }
               />

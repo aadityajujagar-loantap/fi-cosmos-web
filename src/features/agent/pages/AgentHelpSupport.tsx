@@ -64,6 +64,7 @@ export function AgentHelpSupport({ onBack }: AgentHelpSupportProps) {
   const [expandedFaq, setExpandedFaq] = useState(faqs[0].question);
   const [ticketMessage, setTicketMessage] = useState("Unable to upload address proof for Field Investigation.");
   const [supportStatus, setSupportStatus] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const filteredFaqs = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -76,13 +77,18 @@ export function AgentHelpSupport({ onBack }: AgentHelpSupportProps) {
       setSupportStatus("Describe the issue before creating a ticket.");
       return;
     }
-    const ticketId = `SUP-${Date.now().toString().slice(-5)}`;
-    localStorage.setItem("agent-last-support-ticket", JSON.stringify({ ticketId, ticketMessage, createdAt: new Date().toISOString() }));
-    setSupportStatus(`${ticketId} created. Support will respond in the app.`);
+    setIsSubmitting(true);
+    setSupportStatus("");
+    window.setTimeout(() => {
+      setIsSubmitting(false);
+      const ticketId = `SUP-${Date.now().toString().slice(-5)}`;
+      localStorage.setItem("agent-last-support-ticket", JSON.stringify({ ticketId, ticketMessage, createdAt: new Date().toISOString() }));
+      setSupportStatus(`${ticketId} created. Support will respond in the app.`);
+    }, 1000);
   };
 
   return (
-    <section className="relative flex h-[100dvh] min-h-screen flex-col overflow-hidden bg-white text-[#07183f]">
+    <section className="relative flex h-[100dvh] min-h-screen flex-col overflow-hidden bg-white text-[#07183f] animate-slide-up">
       <div className="mx-auto flex h-full w-full max-w-[430px] flex-col px-5 pb-5 pt-4">
         <header className="relative flex h-12 flex-none items-center justify-center">
           <button onClick={onBack} type="button" aria-label="Back" className="absolute left-0 grid h-9 w-9 place-items-center rounded-xl bg-white text-[#07183f] hover:bg-slate-50">
@@ -93,7 +99,7 @@ export function AgentHelpSupport({ onBack }: AgentHelpSupportProps) {
           <h1 className="text-lg font-bold">Help & Support</h1>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto pb-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <div className="min-h-0 flex-1 overflow-y-auto pb-28 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <section className="mt-3 rounded-[18px] border border-[#d3e5fe] bg-gradient-to-r from-[#f5f9ff] to-[#edf5ff] p-4">
             <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#1158d4]">Support center</p>
             <h2 className="mt-1 text-xl font-bold leading-tight">Get help with tasks, uploads, sync and app settings.</h2>
@@ -162,8 +168,23 @@ export function AgentHelpSupport({ onBack }: AgentHelpSupportProps) {
               <button onClick={() => setSupportStatus("Calling field support: +91 1800 102 4242")} type="button" className="flex h-11 items-center justify-center gap-2 rounded-xl bg-[#1158d4] text-xs font-bold text-white">
                 Call field support
               </button>
-              <button onClick={createTicket} type="button" className="flex h-11 items-center justify-center gap-2 rounded-xl border border-[#1158d4] bg-white text-xs font-bold text-[#1158d4]">
-                Create support ticket
+              <button
+                onClick={createTicket}
+                disabled={isSubmitting}
+                type="button"
+                className="flex h-11 items-center justify-center gap-2 rounded-xl border border-[#1158d4] bg-white text-xs font-bold text-[#1158d4] cursor-pointer"
+              >
+                {isSubmitting ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-[#1158d4]" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    <span>Submitting ticket...</span>
+                  </>
+                ) : (
+                  "Create support ticket"
+                )}
               </button>
             </div>
             {supportStatus ? <p className="mt-3 rounded-xl bg-[#f4f8ff] px-3 py-2 text-[10px] font-bold leading-relaxed text-[#1158d4]">{supportStatus}</p> : null}

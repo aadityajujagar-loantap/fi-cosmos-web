@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { Step } from "../../../types";
 import { AgentProfileCard } from "../components/AgentProfileCard";
 
@@ -11,14 +12,14 @@ interface InfoRowProps {
 
 function InfoRow({ icon, label, value, iconColorClass = "text-[#1158d4]", iconBgClass = "bg-[#edf5ff]" }: InfoRowProps) {
   return (
-    <div className="flex items-start justify-between gap-4 py-3 px-4 border-b border-[#edf1f5] last:border-b-0 text-xs">
-      <div className="flex items-center gap-3.5 min-w-0">
-        <div className={`grid w-8 h-8 place-items-center rounded-full flex-none ${iconBgClass} ${iconColorClass}`}>
-          {icon}
-        </div>
-        <p className="m-0 font-bold text-[#8f98a8] leading-none whitespace-nowrap">{label}</p>
+    <div className="flex items-start gap-3.5 py-3 px-4 border-b border-[#edf1f5] last:border-b-0 text-xs">
+      <div className={`grid w-8 h-8 place-items-center rounded-full flex-none ${iconBgClass} ${iconColorClass}`}>
+        {icon}
       </div>
-      <p className="m-0 font-bold text-[#07183f] text-right max-w-[60%] leading-relaxed break-words">{value}</p>
+      <div className="flex-1 min-w-0 flex flex-col gap-0.5 text-left">
+        <span className="text-[10px] font-bold text-[#8f98a8] uppercase tracking-wider">{label}</span>
+        <span className="text-xs font-bold text-[#07183f] break-words leading-relaxed">{value}</span>
+      </div>
     </div>
   );
 }
@@ -72,8 +73,56 @@ interface AgentPersonalInfoProps {
 }
 
 export function AgentPersonalInfo({ onBack, onNavigate }: AgentPersonalInfoProps) {
+  // Personal Details
+  const [isEditingPersonal, setIsEditingPersonal] = useState(false);
+  const [fullName, setFullName] = useState(() => localStorage.getItem("personal_fullName") || "Amit Deshmukh");
+  const [dob, setDob] = useState(() => localStorage.getItem("personal_dob") || "12 May 1992");
+  const [gender, setGender] = useState(() => localStorage.getItem("personal_gender") || "Male");
+  const [mobile, setMobile] = useState(() => localStorage.getItem("personal_mobile") || "+91 98765 43210");
+  const [email, setEmail] = useState(() => localStorage.getItem("personal_email") || "amit.deshmukh@fieldops.com");
+  const [address, setAddress] = useState(() => localStorage.getItem("personal_address") || "102, Sai Residency, Baner Road, Pune - 411045, Maharashtra, India");
+
+  // Emergency Contact
+  const [isEditingEmergency, setIsEditingEmergency] = useState(false);
+  const [emergencyName, setEmergencyName] = useState(() => localStorage.getItem("personal_emergencyName") || "Rohini Deshmukh");
+  const [emergencyPhone, setEmergencyPhone] = useState(() => localStorage.getItem("personal_emergencyPhone") || "+91 91234 56789");
+  const [emergencyRelation, setEmergencyRelation] = useState(() => localStorage.getItem("personal_emergencyRelation") || "Spouse");
+
+  const handleSavePersonal = () => {
+    localStorage.setItem("personal_fullName", fullName);
+    localStorage.setItem("personal_dob", dob);
+    localStorage.setItem("personal_gender", gender);
+    localStorage.setItem("personal_mobile", mobile);
+    localStorage.setItem("personal_email", email);
+    localStorage.setItem("personal_address", address);
+    setIsEditingPersonal(false);
+  };
+
+  const handleCancelPersonal = () => {
+    setFullName(localStorage.getItem("personal_fullName") || "Amit Deshmukh");
+    setDob(localStorage.getItem("personal_dob") || "12 May 1992");
+    setGender(localStorage.getItem("personal_gender") || "Male");
+    setMobile(localStorage.getItem("personal_mobile") || "+91 98765 43210");
+    setEmail(localStorage.getItem("personal_email") || "amit.deshmukh@fieldops.com");
+    setAddress(localStorage.getItem("personal_address") || "102, Sai Residency, Baner Road, Pune - 411045, Maharashtra, India");
+    setIsEditingPersonal(false);
+  };
+
+  const handleSaveEmergency = () => {
+    localStorage.setItem("personal_emergencyName", emergencyName);
+    localStorage.setItem("personal_emergencyPhone", emergencyPhone);
+    localStorage.setItem("personal_emergencyRelation", emergencyRelation);
+    setIsEditingEmergency(false);
+  };
+
+  const handleCancelEmergency = () => {
+    setEmergencyName(localStorage.getItem("personal_emergencyName") || "Rohini Deshmukh");
+    setEmergencyPhone(localStorage.getItem("personal_emergencyPhone") || "+91 91234 56789");
+    setEmergencyRelation(localStorage.getItem("personal_emergencyRelation") || "Spouse");
+    setIsEditingEmergency(false);
+  };
   return (
-    <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden">
+    <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden animate-slide-up">
       <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-20 justify-start relative h-full overflow-hidden">
         
         {/* Header */}
@@ -107,7 +156,7 @@ export function AgentPersonalInfo({ onBack, onNavigate }: AgentPersonalInfoProps
         </header>
 
         {/* Scrollable Container */}
-        <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full mt-2 flex flex-col gap-4 pb-4">
+        <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full mt-2 flex flex-col gap-4 pb-28">
           
           {/* Profile Summary Card */}
           <AgentProfileCard />
@@ -116,83 +165,164 @@ export function AgentPersonalInfo({ onBack, onNavigate }: AgentPersonalInfoProps
           <div>
             <h2 className="text-xs font-bold text-[#5c6a85] text-left mb-2 px-1">Personal Details</h2>
             <div className="border border-[#edf1f5] rounded-[18px] bg-white shadow-sm overflow-hidden flex flex-col">
-              <InfoRow
-                label="Full Name"
-                value="Amit Deshmukh"
-                icon={
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                    <circle cx="12" cy="7" r="4" />
-                  </svg>
-                }
-              />
-              <InfoRow
-                label="Date of Birth"
-                value="12 May 1992"
-                icon={
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
-                    <rect x="3" y="4" width="18" height="18" rx="2" />
-                    <line x1="16" y1="2" x2="16" y2="6" />
-                    <line x1="8" y1="2" x2="8" y2="6" />
-                    <line x1="3" y1="10" x2="21" y2="10" />
-                  </svg>
-                }
-              />
-              <InfoRow
-                label="Gender"
-                value="Male"
-                icon={
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
-                    <circle cx="12" cy="12" r="10" strokeWidth="2.5" />
-                    <line x1="12" y1="2" x2="12" y2="12" strokeWidth="2.5" />
-                    <polyline points="8,6 12,2 16,6" strokeWidth="2.5" />
-                  </svg>
-                }
-              />
-              <InfoRow
-                label="Mobile Number"
-                value="+91 98765 43210"
-                icon={
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
-                    <rect x="5" y="2" width="14" height="20" rx="2" />
-                    <line x1="12" y1="18" x2="12" y2="18" />
-                  </svg>
-                }
-              />
-              <InfoRow
-                label="Email Address"
-                value="amit.deshmukh@fieldops.com"
-                icon={
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
-                    <rect x="2" y="4" width="20" height="16" rx="2" />
-                    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-                  </svg>
-                }
-              />
-              <InfoRow
-                label="Current Address"
-                value="102, Sai Residency, Baner Road, Pune - 411045, Maharashtra, India"
-                icon={
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
-                    <path d="M12 21s7-5.2 7-12a7 7 0 0 0-14 0c0 6.8 7 12 7 12Z" />
-                    <circle cx="12" cy="9" r="2" />
-                  </svg>
-                }
-              />
-              
-              {/* Edit Personal Details Button */}
-              <div className="p-3 bg-slate-50/30 border-t border-[#edf1f5] flex items-center justify-center">
-                <button
-                  type="button"
-                  className="flex items-center justify-center gap-1.5 w-full h-9 border border-[#d5dbe5] rounded-xl text-xs font-bold text-[#07183f] bg-white cursor-pointer hover:bg-slate-50 shadow-sm"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 text-[#1158d4]">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                    <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                  </svg>
-                  Edit Personal Details
-                </button>
-              </div>
+              {isEditingPersonal ? (
+                <div className="p-4 flex flex-col gap-3">
+                  <div className="flex flex-col gap-1 text-left">
+                    <label className="text-[10px] font-bold text-[#8f98a8]">Full Name</label>
+                    <input
+                      type="text"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      className="w-full h-9 px-3 border border-[#cbdbe5] rounded-xl text-xs font-bold text-[#07183f] bg-white outline-none focus:border-[#1158d4]"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 text-left">
+                    <label className="text-[10px] font-bold text-[#8f98a8]">Date of Birth</label>
+                    <input
+                      type="text"
+                      value={dob}
+                      onChange={(e) => setDob(e.target.value)}
+                      className="w-full h-9 px-3 border border-[#cbdbe5] rounded-xl text-xs font-bold text-[#07183f] bg-white outline-none focus:border-[#1158d4]"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 text-left">
+                    <label className="text-[10px] font-bold text-[#8f98a8]">Gender</label>
+                    <select
+                      value={gender}
+                      onChange={(e) => setGender(e.target.value)}
+                      className="w-full h-9 px-2 border border-[#cbdbe5] rounded-xl text-xs font-bold text-[#07183f] bg-white outline-none focus:border-[#1158d4] cursor-pointer"
+                    >
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1 text-left">
+                    <label className="text-[10px] font-bold text-[#8f98a8]">Mobile Number</label>
+                    <input
+                      type="text"
+                      value={mobile}
+                      onChange={(e) => setMobile(e.target.value)}
+                      className="w-full h-9 px-3 border border-[#cbdbe5] rounded-xl text-xs font-bold text-[#07183f] bg-white outline-none focus:border-[#1158d4]"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 text-left">
+                    <label className="text-[10px] font-bold text-[#8f98a8]">Email Address</label>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full h-9 px-3 border border-[#cbdbe5] rounded-xl text-xs font-bold text-[#07183f] bg-white outline-none focus:border-[#1158d4]"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 text-left">
+                    <label className="text-[10px] font-bold text-[#8f98a8]">Current Address</label>
+                    <textarea
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      className="w-full h-20 p-2.5 border border-[#cbdbe5] rounded-xl text-xs font-bold text-[#07183f] bg-white outline-none focus:border-[#1158d4]"
+                    />
+                  </div>
+                  
+                  <div className="flex items-center gap-2 mt-2">
+                    <button
+                      type="button"
+                      onClick={handleSavePersonal}
+                      className="flex-1 h-9 rounded-xl bg-[#1158d4] hover:bg-[#0f4ebc] text-white font-bold text-xs cursor-pointer border-0 shadow-sm"
+                    >
+                      Save Changes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelPersonal}
+                      className="flex-1 h-9 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 font-bold text-xs cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <InfoRow
+                    label="Full Name"
+                    value={fullName}
+                    icon={
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                        <circle cx="12" cy="7" r="4" />
+                      </svg>
+                    }
+                  />
+                  <InfoRow
+                    label="Date of Birth"
+                    value={dob}
+                    icon={
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
+                        <rect x="3" y="4" width="18" height="18" rx="2" />
+                        <line x1="16" y1="2" x2="16" y2="6" />
+                        <line x1="8" y1="2" x2="8" y2="6" />
+                        <line x1="3" y1="10" x2="21" y2="10" />
+                      </svg>
+                    }
+                  />
+                  <InfoRow
+                    label="Gender"
+                    value={gender}
+                    icon={
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
+                        <circle cx="12" cy="12" r="10" strokeWidth="2.5" />
+                        <line x1="12" y1="2" x2="12" y2="12" strokeWidth="2.5" />
+                        <polyline points="8,6 12,2 16,6" strokeWidth="2.5" />
+                      </svg>
+                    }
+                  />
+                  <InfoRow
+                    label="Mobile Number"
+                    value={mobile}
+                    icon={
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
+                        <rect x="5" y="2" width="14" height="20" rx="2" />
+                        <line x1="12" y1="18" x2="12" y2="18" />
+                      </svg>
+                    }
+                  />
+                  <InfoRow
+                    label="Email Address"
+                    value={email}
+                    icon={
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
+                        <rect x="2" y="4" width="20" height="16" rx="2" />
+                        <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                      </svg>
+                    }
+                  />
+                  <InfoRow
+                    label="Current Address"
+                    value={address}
+                    icon={
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
+                        <path d="M12 21s7-5.2 7-12a7 7 0 0 0-14 0c0 6.8 7 12 7 12Z" />
+                        <circle cx="12" cy="9" r="2" />
+                      </svg>
+                    }
+                  />
+                  
+                  {/* Edit Personal Details Button */}
+                  <div className="p-3 bg-slate-50/30 border-t border-[#edf1f5] flex items-center justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingPersonal(true)}
+                      className="flex items-center justify-center gap-1.5 w-full h-9 border border-[#d5dbe5] rounded-xl text-xs font-bold text-[#07183f] bg-white cursor-pointer hover:bg-slate-50 shadow-sm"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 text-[#1158d4]">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </svg>
+                      Edit Personal Details
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -200,58 +330,110 @@ export function AgentPersonalInfo({ onBack, onNavigate }: AgentPersonalInfoProps
           <div>
             <h2 className="text-xs font-bold text-[#5c6a85] text-left mb-2 px-1">Emergency Contact</h2>
             <div className="border border-[#edf1f5] rounded-[18px] bg-white shadow-sm overflow-hidden flex flex-col">
-              <InfoRow
-                iconColorClass="text-[#088d27]"
-                iconBgClass="bg-[#ecfaef]"
-                label="Contact Name"
-                value="Rohini Deshmukh"
-                icon={
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                    <circle cx="12" cy="7" r="4" />
-                  </svg>
-                }
-              />
-              <InfoRow
-                iconColorClass="text-[#088d27]"
-                iconBgClass="bg-[#ecfaef]"
-                label="Contact Number"
-                value="+91 91234 56789"
-                icon={
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
-                    <rect x="5" y="2" width="14" height="20" rx="2" />
-                    <line x1="12" y1="18" x2="12" y2="18" />
-                  </svg>
-                }
-              />
-              <InfoRow
-                iconColorClass="text-[#088d27]"
-                iconBgClass="bg-[#ecfaef]"
-                label="Relationship"
-                value="Spouse"
-                icon={
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                    <circle cx="9" cy="7" r="4" />
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                  </svg>
-                }
-              />
+              {isEditingEmergency ? (
+                <div className="p-4 flex flex-col gap-3">
+                  <div className="flex flex-col gap-1 text-left">
+                    <label className="text-[10px] font-bold text-[#8f98a8]">Contact Name</label>
+                    <input
+                      type="text"
+                      value={emergencyName}
+                      onChange={(e) => setEmergencyName(e.target.value)}
+                      className="w-full h-9 px-3 border border-[#cbdbe5] rounded-xl text-xs font-bold text-[#07183f] bg-white outline-none focus:border-[#1158d4]"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 text-left">
+                    <label className="text-[10px] font-bold text-[#8f98a8]">Contact Number</label>
+                    <input
+                      type="text"
+                      value={emergencyPhone}
+                      onChange={(e) => setEmergencyPhone(e.target.value)}
+                      className="w-full h-9 px-3 border border-[#cbdbe5] rounded-xl text-xs font-bold text-[#07183f] bg-white outline-none focus:border-[#1158d4]"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 text-left">
+                    <label className="text-[10px] font-bold text-[#8f98a8]">Relationship</label>
+                    <input
+                      type="text"
+                      value={emergencyRelation}
+                      onChange={(e) => setEmergencyRelation(e.target.value)}
+                      className="w-full h-9 px-3 border border-[#cbdbe5] rounded-xl text-xs font-bold text-[#07183f] bg-white outline-none focus:border-[#1158d4]"
+                    />
+                  </div>
+                  
+                  <div className="flex items-center gap-2 mt-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveEmergency}
+                      className="flex-1 h-9 rounded-xl bg-[#088d27] hover:bg-[#06741f] text-white font-bold text-xs cursor-pointer border-0 shadow-sm"
+                    >
+                      Save Changes
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCancelEmergency}
+                      className="flex-1 h-9 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 font-bold text-xs cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <InfoRow
+                    iconColorClass="text-[#088d27]"
+                    iconBgClass="bg-[#ecfaef]"
+                    label="Contact Name"
+                    value={emergencyName}
+                    icon={
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                        <circle cx="12" cy="7" r="4" />
+                      </svg>
+                    }
+                  />
+                  <InfoRow
+                    iconColorClass="text-[#088d27]"
+                    iconBgClass="bg-[#ecfaef]"
+                    label="Contact Number"
+                    value={emergencyPhone}
+                    icon={
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
+                        <rect x="5" y="2" width="14" height="20" rx="2" />
+                        <line x1="12" y1="18" x2="12" y2="18" />
+                      </svg>
+                    }
+                  />
+                  <InfoRow
+                    iconColorClass="text-[#088d27]"
+                    iconBgClass="bg-[#ecfaef]"
+                    label="Relationship"
+                    value={emergencyRelation}
+                    icon={
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                        <circle cx="9" cy="7" r="4" />
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                      </svg>
+                    }
+                  />
 
-              {/* Edit Emergency Contact Button */}
-              <div className="p-3 bg-[#fbfdfb] border-t border-[#edf1f5] flex items-center justify-center">
-                <button
-                  type="button"
-                  className="flex items-center justify-center gap-1.5 w-full h-9 border border-[#d4f3dd] rounded-xl text-xs font-bold text-[#088d27] bg-[#f5fdf7] cursor-pointer hover:bg-[#ecfaef] shadow-sm"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                    <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                  </svg>
-                  Edit Emergency Contact
-                </button>
-              </div>
+                  {/* Edit Emergency Contact Button */}
+                  <div className="p-3 bg-[#fbfdfb] border-t border-[#edf1f5] flex items-center justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditingEmergency(true)}
+                      className="flex items-center justify-center gap-1.5 w-full h-9 border border-[#d4f3dd] rounded-xl text-xs font-bold text-[#088d27] bg-[#f5fdf7] cursor-pointer hover:bg-[#ecfaef] shadow-sm"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </svg>
+                      Edit Emergency Contact
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 

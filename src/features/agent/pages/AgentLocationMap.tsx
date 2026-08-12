@@ -38,7 +38,7 @@ export function AgentLocationMap({ onBack, onNavigate }: AgentLocationMapProps) 
   };
 
   return (
-    <section className="relative flex h-[100dvh] min-h-screen flex-col overflow-hidden bg-white text-[#07183f]">
+    <section className="relative flex h-[100dvh] min-h-screen flex-col overflow-hidden bg-white text-[#07183f] animate-slide-up">
       <div className="mx-auto flex h-full w-full max-w-[430px] flex-col px-5 pb-5 pt-4">
         <header className="relative flex h-12 flex-none items-center justify-center">
           <button onClick={onBack} type="button" aria-label="Back" className="absolute left-0 grid h-9 w-9 place-items-center rounded-xl bg-white text-[#07183f] hover:bg-slate-50">

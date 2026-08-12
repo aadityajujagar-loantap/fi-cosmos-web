@@ -119,7 +119,7 @@ function Icon({ type }: { type: "home" | "tasks" | "plus" | "bell" | "map" | "br
 
 export function AgentMenu({ onBack, onLogout, onNavigate }: AgentMenuProps) {
   return (
-    <section className="relative flex h-[100dvh] min-h-screen flex-col overflow-hidden bg-white text-[#07183f]">
+    <section className="relative flex h-[100dvh] min-h-screen flex-col overflow-hidden bg-white text-[#07183f] animate-slide-in-left">
       <div className="mx-auto flex h-full w-full max-w-[430px] flex-col px-5 pb-5 pt-4">
         <header className="relative flex h-12 flex-none items-center justify-center">
           <button onClick={onBack} type="button" aria-label="Close menu" className="absolute left-0 grid h-9 w-9 place-items-center rounded-xl bg-white text-[#07183f] hover:bg-slate-50">

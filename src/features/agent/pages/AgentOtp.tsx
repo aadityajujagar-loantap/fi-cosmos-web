@@ -59,19 +59,32 @@ export function AgentOtp({ mobileNumber, onVerifyOtp, onBack }: AgentOtpProps) {
     }
   };
 
+  const [isVerifying, setIsVerifying] = useState(false);
+
   const handleSubmit = () => {
-    onVerifyOtp(otp.join(""));
+    if (otp.join("").length < 6) return;
+    setIsVerifying(true);
+    window.setTimeout(() => {
+      setIsVerifying(false);
+      onVerifyOtp(otp.join(""));
+    }, 1200); // 1.2-second verification delay
   };
 
   const handleResend = () => {
-    if (timer > 0) return;
+    if (timer > 0 || isVerifying) return;
     setOtp(Array(6).fill(""));
     setTimer(30);
     otpRefs.current[0]?.focus();
   };
 
   return (
-    <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+    <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] animate-fade-in">
+      {isVerifying && (
+        <div className="absolute inset-0 bg-[#07183f]/65 backdrop-blur-sm z-50 flex flex-col items-center justify-center gap-3">
+          <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin" />
+          <span className="text-white text-xs font-bold tracking-wide">Verifying OTP Code...</span>
+        </div>
+      )}
       <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-8 py-6 justify-between items-center relative min-h-screen">
         {/* Top/Middle Group (Header, Illustration, instructions) */}
         <div className="w-full flex flex-col items-center flex-none">

@@ -380,7 +380,7 @@ interface AgentHomeProps {
 
 export function AgentHome({ onNavigate }: AgentHomeProps) {
   return (
-    <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden">
+    <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden animate-slide-up">
       <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-20 justify-start relative h-full overflow-hidden">
         
         {/* Header */}
@@ -473,51 +473,55 @@ export function AgentHome({ onNavigate }: AgentHomeProps) {
                 <article
                   key={task.title}
                   onClick={() => onNavigate?.("task-details")}
-                  className="grid grid-cols-[40px_1fr_auto_auto] items-center gap-3 px-4 py-3.5 border-b border-[#edf1f5] last:border-b-0 cursor-pointer hover:bg-slate-50/50"
+                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 border-b border-[#edf1f5] last:border-b-0 cursor-pointer hover:bg-slate-50/50"
                 >
-                  <div className={`grid h-10 w-10 place-items-center rounded-lg flex-none ${tone.iconBg} ${tone.accent}`}>
-                    <TaskIcon icon={task.icon} />
+                  <div className="flex items-start gap-3 min-w-[200px] flex-1">
+                    <div className={`grid h-10 w-10 place-items-center rounded-lg flex-none ${tone.iconBg} ${tone.accent}`}>
+                      <TaskIcon icon={task.icon} />
+                    </div>
+
+                    <div className="min-w-0 flex-1 text-left">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold leading-none ${priorityStyles[task.priority]}`}>
+                          {task.priority}
+                        </span>
+                        <h3 className="min-w-0 truncate text-xs font-bold leading-none text-[#07183f]">
+                          {task.title}
+                        </h3>
+                      </div>
+
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[10px] font-medium leading-none text-[#5c6a85]">
+                        <LocationIcon />
+                        <span className="truncate max-w-[130px] sm:max-w-none">{task.location}</span>
+                        <span className="text-[#a0aec0]">.</span>
+                        <span>{task.distance}</span>
+                      </div>
+
+                      <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold leading-none text-[#1158d4]">
+                        <ClockIcon />
+                        <span className="truncate">{task.time}</span>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold leading-none ${priorityStyles[task.priority]}`}>
-                        {task.priority}
-                      </span>
-                      <h3 className="min-w-0 truncate text-xs font-bold leading-none text-[#07183f]">
-                        {task.title}
-                      </h3>
+                  <div className="flex items-center gap-2 flex-none ml-auto">
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onNavigate?.("task-details");
+                      }}
+                      type="button"
+                      className={
+                        task.action === "filled"
+                          ? "bg-[#1158d4] text-white hover:bg-[#0f4ebc] text-[10px] font-bold px-2 py-1.5 rounded-md flex items-center justify-center w-[74px] shadow-sm cursor-pointer border-0"
+                          : "border border-[#1158d4] text-[#1158d4] bg-white hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md flex items-center justify-center w-[74px] cursor-pointer"
+                      }
+                    >
+                      Start Task
+                    </button>
+                    <div className="text-slate-400 pl-0.5">
+                      <ChevronRight />
                     </div>
-
-                    <div className="mt-1.5 flex items-center gap-1 text-[10px] font-medium leading-none text-[#5c6a85]">
-                      <LocationIcon />
-                      <span className="truncate">{task.location}</span>
-                      <span className="text-[#a0aec0]">.</span>
-                      <span>{task.distance}</span>
-                    </div>
-
-                    <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold leading-none text-[#1158d4]">
-                      <ClockIcon />
-                      <span className="truncate">{task.time}</span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onNavigate?.("task-details");
-                    }}
-                    type="button"
-                    className={
-                      task.action === "filled"
-                        ? "bg-[#1158d4] text-white hover:bg-[#0f4ebc] text-[10px] font-bold px-2 py-1.5 rounded-md flex items-center justify-center w-[74px] shadow-sm cursor-pointer border-0"
-                        : "border border-[#1158d4] text-[#1158d4] bg-white hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md flex items-center justify-center w-[74px] cursor-pointer"
-                    }
-                  >
-                    Start Task
-                  </button>
-                  <div className="text-slate-400 pl-0.5">
-                    <ChevronRight />
                   </div>
                 </article>
               );
