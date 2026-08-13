@@ -1,5 +1,11 @@
-import { useRef, useState } from "react";
-import { addCapturedAsset, deleteCapturedAsset, loadCapturedAssets, type CapturedAsset } from "../utils/media";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  addCapturedAsset,
+  addCapturedBlob,
+  deleteCapturedAsset,
+  loadCapturedAssets,
+  type CapturedAsset,
+} from "../utils/media";
 import { getActiveAgentTask } from "../utils/tasks";
 
 interface AgentCapturePhotoProps {
@@ -7,6 +13,8 @@ interface AgentCapturePhotoProps {
   completedStepsCount?: number;
   setCompletedStepsCount?: (count: number) => void;
 }
+
+type CameraStatus = "starting" | "ready" | "blocked" | "unsupported";
 
 function CameraIcon() {
   return (
@@ -24,14 +32,67 @@ export function AgentCapturePhoto({
 }: AgentCapturePhotoProps) {
   const [task] = useState(() => getActiveAgentTask());
   const [photos, setPhotos] = useState<CapturedAsset[]>(() => loadCapturedAssets(task.id, "photo"));
-  const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("environment");
+  const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("user");
+  const [cameraStatus, setCameraStatus] = useState<CameraStatus>("starting");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
   const [triggerFlashAnimation, setTriggerFlashAnimation] = useState(false);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
   const uploadInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
-  const saveFiles = async (fileList: FileList | null) => {
+  const refreshPhotos = () => setPhotos(loadCapturedAssets(task.id, "photo"));
+
+  const stopInlineCamera = useCallback(() => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+  }, []);
+
+  const startInlineCamera = useCallback(async () => {
+    setError("");
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraStatus("unsupported");
+      return;
+    }
+
+    stopInlineCamera();
+    setCameraStatus("starting");
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: cameraFacing },
+          height: { ideal: 960 },
+          width: { ideal: 1280 },
+        },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setCameraStatus("ready");
+    } catch {
+      stopInlineCamera();
+      setCameraStatus("blocked");
+      setError("Camera permission denied or unavailable. You can still upload a photo.");
+    }
+  }, [cameraFacing, stopInlineCamera]);
+
+  useEffect(() => {
+    const startTimer = window.setTimeout(() => {
+      void startInlineCamera();
+    }, 0);
+    return () => {
+      window.clearTimeout(startTimer);
+      stopInlineCamera();
+    };
+  }, [startInlineCamera, stopInlineCamera]);
+
+  const saveUploadedFiles = async (fileList: FileList | null) => {
     if (!fileList?.length) return;
 
     setIsSaving(true);
@@ -40,21 +101,65 @@ export function AgentCapturePhoto({
       for (const file of Array.from(fileList)) {
         await addCapturedAsset(file, { kind: "photo", taskId: task.id });
       }
-      setPhotos(loadCapturedAssets(task.id, "photo"));
+      refreshPhotos();
       setTriggerFlashAnimation(true);
       window.setTimeout(() => setTriggerFlashAnimation(false), 450);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save photo.");
     } finally {
       setIsSaving(false);
-      if (cameraInputRef.current) cameraInputRef.current.value = "";
       if (uploadInputRef.current) uploadInputRef.current.value = "";
+    }
+  };
+
+  const captureInlinePhoto = async () => {
+    const video = videoRef.current;
+    if (!video || cameraStatus !== "ready" || !video.videoWidth || !video.videoHeight) {
+      await startInlineCamera();
+      return;
+    }
+
+    setIsSaving(true);
+    setError("");
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Unable to capture photo.");
+
+      if (cameraFacing === "user") {
+        context.translate(canvas.width, 0);
+        context.scale(-1, 1);
+      }
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((nextBlob) => {
+          if (nextBlob) resolve(nextBlob);
+          else reject(new Error("Unable to save captured photo."));
+        }, "image/jpeg", 0.92);
+      });
+
+      await addCapturedBlob(blob, {
+        kind: "photo",
+        mimeType: "image/jpeg",
+        name: `customer_photo_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.jpg`,
+        taskId: task.id,
+      });
+      refreshPhotos();
+      setTriggerFlashAnimation(true);
+      window.setTimeout(() => setTriggerFlashAnimation(false), 450);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save photo.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
   const removePhoto = (assetId: string) => {
     deleteCapturedAsset(assetId, task.id);
-    setPhotos(loadCapturedAssets(task.id, "photo"));
+    refreshPhotos();
   };
 
   const handleUsePhoto = () => {
@@ -65,10 +170,17 @@ export function AgentCapturePhoto({
     if (setCompletedStepsCount && completedStepsCount < 2) {
       setCompletedStepsCount(2);
     }
+    stopInlineCamera();
     onBack();
   };
 
   const latestPhoto = photos[0];
+  const cameraMessage =
+    cameraStatus === "starting"
+      ? "Opening camera..."
+      : cameraStatus === "blocked"
+        ? "Camera unavailable"
+        : "Inline camera is not supported";
 
   return (
     <section className="relative flex h-[100dvh] min-h-screen flex-col overflow-hidden bg-white">
@@ -86,7 +198,10 @@ export function AgentCapturePhoto({
       <div className="mx-auto flex h-full min-h-0 w-full max-w-[430px] flex-col px-5 pb-[max(16px,env(safe-area-inset-bottom))] pt-4">
         <header className="relative flex h-12 w-full flex-none items-center justify-center">
           <button
-            onClick={onBack}
+            onClick={() => {
+              stopInlineCamera();
+              onBack();
+            }}
             type="button"
             aria-label="Back"
             className="absolute left-0 flex h-8 w-8 items-center justify-center rounded-full border-0 text-[#07183f] hover:bg-slate-50"
@@ -100,19 +215,11 @@ export function AgentCapturePhoto({
         </header>
 
         <input
-          ref={cameraInputRef}
-          accept="image/*"
-          capture={cameraFacing}
-          className="hidden"
-          onChange={(event) => void saveFiles(event.target.files)}
-          type="file"
-        />
-        <input
           ref={uploadInputRef}
           accept="image/*"
           className="hidden"
           multiple
-          onChange={(event) => void saveFiles(event.target.files)}
+          onChange={(event) => void saveUploadedFiles(event.target.files)}
           type="file"
         />
 
@@ -123,24 +230,44 @@ export function AgentCapturePhoto({
             </div>
             <div className="min-w-0 text-xs text-[#1158d4]">
               <p className="m-0 font-bold">Capture a clear customer photo</p>
-              <p className="m-0 mt-0.5 font-medium text-[#5c6a85]">Native camera opens on mobile; gallery upload is also supported.</p>
+              <p className="m-0 mt-0.5 font-medium text-[#5c6a85]">The camera opens inside this screen. Upload remains available as fallback.</p>
             </div>
           </div>
 
           <div className="relative aspect-[4/3] w-full flex-none overflow-hidden rounded-2xl border border-slate-200 bg-slate-950 shadow-inner">
-            {latestPhoto ? (
-              <img alt={latestPhoto.name} className="h-full w-full object-cover" src={latestPhoto.dataUrl} />
-            ) : (
-              <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-white">
-                <div className="grid h-14 w-14 place-items-center rounded-full bg-white/12">
+            <video
+              ref={videoRef}
+              autoPlay
+              muted
+              playsInline
+              className={`h-full w-full object-cover ${cameraFacing === "user" ? "-scale-x-100" : ""} ${cameraStatus === "ready" ? "opacity-100" : "opacity-0"}`}
+            />
+
+            {cameraStatus !== "ready" ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center text-white">
+                {latestPhoto ? (
+                  <img alt={latestPhoto.name} className="absolute inset-0 h-full w-full object-cover opacity-35" src={latestPhoto.dataUrl} />
+                ) : null}
+                <div className="relative z-10 grid h-14 w-14 place-items-center rounded-full bg-white/12">
                   <CameraIcon />
                 </div>
-                <div>
-                  <p className="m-0 text-sm font-bold">No photo captured yet</p>
-                  <p className="m-0 mt-1 text-xs font-medium text-white/70">Tap the shutter to open the device camera.</p>
+                <div className="relative z-10">
+                  <p className="m-0 text-sm font-bold">{cameraMessage}</p>
+                  <p className="m-0 mt-1 text-xs font-medium text-white/70">
+                    {cameraStatus === "starting" ? "Please allow camera access." : "Tap Start Camera or upload a photo."}
+                  </p>
                 </div>
+                {cameraStatus !== "starting" ? (
+                  <button
+                    onClick={() => void startInlineCamera()}
+                    type="button"
+                    className="relative z-10 h-9 rounded-xl border border-white/30 bg-white/15 px-4 text-xs font-bold text-white"
+                  >
+                    Start Camera
+                  </button>
+                ) : null}
               </div>
-            )}
+            ) : null}
 
             <div className="pointer-events-none absolute left-4 top-4 h-6 w-6 rounded-tl border-l-2 border-t-2 border-white" />
             <div className="pointer-events-none absolute right-4 top-4 h-6 w-6 rounded-tr border-r-2 border-t-2 border-white" />
@@ -163,11 +290,11 @@ export function AgentCapturePhoto({
             </button>
 
             <button
-              onClick={() => cameraInputRef.current?.click()}
+              onClick={() => void captureInlinePhoto()}
               type="button"
               disabled={isSaving}
               className="h-16 w-16 cursor-pointer rounded-full border-4 border-[#1158d4] bg-white p-1 outline-none transition-transform hover:scale-105 active:scale-95 disabled:opacity-60"
-              aria-label="Open camera"
+              aria-label="Capture photo"
             >
               <div className="grid h-full w-full place-items-center rounded-full bg-[#1158d4] text-white">
                 <CameraIcon />
@@ -184,7 +311,7 @@ export function AgentCapturePhoto({
                   <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
                 </svg>
               </div>
-              <span className="text-[10px] font-bold text-[#5c6a85]">{cameraFacing === "environment" ? "Rear" : "Front"}</span>
+              <span className="text-[10px] font-bold text-[#5c6a85]">{cameraFacing === "user" ? "Front" : "Rear"}</span>
             </button>
           </div>
 
@@ -205,12 +332,12 @@ export function AgentCapturePhoto({
                 </div>
               ))}
               <button
-                onClick={() => cameraInputRef.current?.click()}
+                onClick={() => void captureInlinePhoto()}
                 type="button"
                 className="flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-[#cbdbe5] bg-[#f8fafc] text-[#1158d4] hover:bg-slate-50"
               >
                 <span className="text-xs font-bold">+</span>
-                <span className="text-[9px] font-bold">Add</span>
+                <span className="text-[9px] font-bold">Capture</span>
               </button>
             </div>
           </div>
@@ -220,11 +347,11 @@ export function AgentCapturePhoto({
 
         <footer className="flex flex-none items-center gap-3 border-t border-[#eef2f6] bg-white pt-3">
           <button
-            onClick={() => cameraInputRef.current?.click()}
+            onClick={() => void startInlineCamera()}
             type="button"
             className="flex h-12 flex-1 cursor-pointer items-center justify-center rounded-[14px] border border-[#1158d4] bg-white text-sm font-bold text-[#1158d4] shadow-sm hover:bg-slate-50"
           >
-            Retake
+            Restart
           </button>
           <button
             onClick={handleUsePhoto}

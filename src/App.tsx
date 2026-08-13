@@ -33,7 +33,7 @@ function AgentApp() {
   const [step, setStep] = useState<Step>(() => {
     return (localStorage.getItem("isLoggedIn") === "true" ? "home" : "login") as Step;
   });
-  const [prevStep, setPrevStep] = useState<Step>("home");
+  const [historyStack, setHistoryStack] = useState<Step[]>([]);
   const [mobileNumber, setMobileNumber] = useState(() => {
     return localStorage.getItem("mobileNumber") || "";
   });
@@ -66,22 +66,21 @@ function AgentApp() {
   };
 
   const navigateTo = (nextStep: Step) => {
-    // Save current step to trace back dynamically
-    if ([
-      "notifications", "personal-info", "privacy-security", "offline-data", 
-      "employee-info", "work-settings", "history", "task-details", 
-      "task-in-progress", "update-checklist", "capture-photo", 
-      "capture-docs", "customer-signature", "menu", "add-task",
-      "help-support", "about", "location-map"
-    ].includes(nextStep)) {
-      setPrevStep(step);
-    }
+    if (nextStep === step) return;
+    setHistoryStack((current) => [...current, step]);
     setStep(nextStep);
+  };
+
+  const goBack = (fallback: Step = "home") => {
+    const previousStep = historyStack[historyStack.length - 1] || fallback;
+    setHistoryStack(historyStack.slice(0, -1));
+    setStep(previousStep);
   };
 
   const handleLogout = () => {
     localStorage.removeItem("isLoggedIn");
     localStorage.removeItem("mobileNumber");
+    setHistoryStack([]);
     setStep("login");
   };
 
@@ -110,7 +109,7 @@ function AgentApp() {
 
       {step === "menu" ? (
         <AgentMenu
-          onBack={() => setStep(prevStep)}
+          onBack={() => goBack("home")}
           onLogout={handleLogout}
           onNavigate={navigateTo}
         />
@@ -118,26 +117,26 @@ function AgentApp() {
 
       {step === "add-task" ? (
         <AgentAddTask
-          onBack={() => setStep(prevStep)}
+          onBack={() => goBack("home")}
           onNavigate={navigateTo}
         />
       ) : null}
 
       {step === "help-support" ? (
         <AgentHelpSupport
-          onBack={() => setStep(prevStep)}
+          onBack={() => goBack("home")}
         />
       ) : null}
 
       {step === "about" ? (
         <AgentAbout
-          onBack={() => setStep(prevStep)}
+          onBack={() => goBack("home")}
         />
       ) : null}
 
       {step === "location-map" ? (
         <AgentLocationMap
-          onBack={() => setStep(prevStep)}
+          onBack={() => goBack("home")}
           onNavigate={navigateTo}
         />
       ) : null}
@@ -157,42 +156,42 @@ function AgentApp() {
 
       {step === "personal-info" ? (
         <AgentPersonalInfo
-          onBack={() => setStep(prevStep)}
+          onBack={() => goBack("profile")}
           onNavigate={navigateTo}
         />
       ) : null}
 
       {step === "notifications" ? (
         <AgentNotifications
-          onBack={() => setStep(prevStep)}
+          onBack={() => goBack("home")}
           onNavigate={navigateTo}
         />
       ) : null}
 
       {step === "privacy-security" ? (
         <AgentPrivacySecurity
-          onBack={() => setStep(prevStep)}
+          onBack={() => goBack("profile")}
           onNavigate={navigateTo}
         />
       ) : null}
 
       {step === "offline-data" ? (
         <AgentOfflineData
-          onBack={() => setStep(prevStep)}
+          onBack={() => goBack("profile")}
           onNavigate={navigateTo}
         />
       ) : null}
 
       {step === "employee-info" ? (
         <AgentEmployeeInfo
-          onBack={() => setStep(prevStep)}
+          onBack={() => goBack("profile")}
           onNavigate={navigateTo}
         />
       ) : null}
 
       {step === "work-settings" ? (
         <AgentWorkSettings
-          onBack={() => setStep(prevStep)}
+          onBack={() => goBack("profile")}
           onNavigate={navigateTo}
         />
       ) : null}
@@ -205,14 +204,14 @@ function AgentApp() {
 
       {step === "task-details" ? (
         <AgentTaskDetails
-          onBack={() => setStep(prevStep)}
+          onBack={() => goBack("my-tasks")}
           onNavigate={navigateTo}
         />
       ) : null}
 
       {step === "task-in-progress" ? (
         <AgentTaskInProgress
-          onBack={() => setStep(prevStep)}
+          onBack={() => goBack("my-tasks")}
           onNavigate={navigateTo}
           completedStepsCount={completedStepsCount}
         />
@@ -220,7 +219,7 @@ function AgentApp() {
 
       {step === "update-checklist" ? (
         <AgentUpdateChecklist
-          onBack={() => setStep(prevStep)}
+          onBack={() => goBack("task-in-progress")}
           onNavigate={navigateTo}
           completedStepsCount={completedStepsCount}
           setCompletedStepsCount={setCompletedStepsCount}
@@ -229,7 +228,7 @@ function AgentApp() {
 
       {step === "capture-photo" ? (
         <AgentCapturePhoto
-          onBack={() => setStep(prevStep)}
+          onBack={() => goBack("update-checklist")}
           completedStepsCount={completedStepsCount}
           setCompletedStepsCount={setCompletedStepsCount}
         />
@@ -237,7 +236,7 @@ function AgentApp() {
 
       {step === "capture-docs" ? (
         <AgentCaptureDocs
-          onBack={() => setStep(prevStep)}
+          onBack={() => goBack("update-checklist")}
           onNavigate={navigateTo}
           completedStepsCount={completedStepsCount}
           setCompletedStepsCount={setCompletedStepsCount}
@@ -246,7 +245,7 @@ function AgentApp() {
 
         {step === "customer-signature" ? (
           <AgentCustomerSignature
-            onBack={() => setStep(prevStep)}
+            onBack={() => goBack("update-checklist")}
             completedStepsCount={completedStepsCount}
             setCompletedStepsCount={setCompletedStepsCount}
           />

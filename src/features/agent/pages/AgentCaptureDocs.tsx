@@ -95,7 +95,7 @@ function DocumentSlot({
   const captured = assets.length > 0;
 
   return (
-    <div className="flex flex-col overflow-hidden rounded-[18px] border border-[#edf1f5] bg-white text-left shadow-sm">
+    <div className="flex flex-none flex-col overflow-hidden rounded-[18px] border border-[#edf1f5] bg-white text-left shadow-sm">
       <button
         onClick={onToggleExpand}
         type="button"
