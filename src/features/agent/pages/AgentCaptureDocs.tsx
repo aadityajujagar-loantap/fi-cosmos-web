@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import type { Step } from "../../../types";
-import { addCapturedBlob, deleteCapturedAsset, loadCapturedAssets, type CapturedAsset } from "../utils/media";
+import { addCapturedAsset, deleteCapturedAsset, loadCapturedAssets, type CapturedAsset } from "../utils/media";
 import { getActiveAgentTask } from "../utils/tasks";
 
 interface DocumentSlotConfig {
@@ -190,41 +190,32 @@ export function AgentCaptureDocs({
   });
   const [documents, setDocuments] = useState<CapturedAsset[]>(() => loadCapturedAssets(task.id, "document"));
   const [error, setError] = useState("");
+  const [activeSlot, setActiveSlot] = useState<string | null>(null);
 
-  // One hidden input per slot × 2 modes (camera / upload)
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+
   const reloadDocuments = () => setDocuments(loadCapturedAssets(task.id, "document"));
   const assetsForSlot = (slotId: string) => documents.filter((asset) => asset.slot === slotId);
 
-  const saveDummyDocument = async (slot: DocumentSlotConfig, source: "camera" | "upload") => {
+  const handleCapturedFiles = async (fileList: FileList | null) => {
+    if (!fileList?.length || !activeSlot) return;
     setError("");
-    const createdAt = new Date().toLocaleString();
-    const sourceLabel = source === "camera" ? "Camera Capture" : "Uploaded Document";
-    const svg = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="900" height="620" viewBox="0 0 900 620">
-        <rect width="900" height="620" rx="28" fill="#f8fafc"/>
-        <rect x="56" y="56" width="788" height="508" rx="18" fill="#ffffff" stroke="#d8e0eb" stroke-width="6"/>
-        <rect x="92" y="100" width="210" height="32" rx="10" fill="#1158d4"/>
-        <rect x="92" y="170" width="560" height="24" rx="8" fill="#cbd5e1"/>
-        <rect x="92" y="220" width="650" height="22" rx="8" fill="#e2e8f0"/>
-        <rect x="92" y="268" width="600" height="22" rx="8" fill="#e2e8f0"/>
-        <rect x="92" y="316" width="480" height="22" rx="8" fill="#e2e8f0"/>
-        <rect x="92" y="402" width="300" height="84" rx="14" fill="#edf5ff" stroke="#1158d4" stroke-width="3"/>
-        <text x="112" y="454" fill="#1158d4" font-family="Arial, sans-serif" font-size="34" font-weight="700">${slot.title}</text>
-        <text x="92" y="532" fill="#64748b" font-family="Arial, sans-serif" font-size="24">Dummy ${sourceLabel} generated ${createdAt}</text>
-      </svg>
-    `;
-
     try {
-      await addCapturedBlob(new Blob([svg], { type: "image/svg+xml" }), {
-        kind: "document",
-        mimeType: "image/svg+xml",
-        name: `${slot.id}-${source}-document.svg`,
-        slot: slot.id,
-        taskId: task.id,
-      });
+      for (const file of Array.from(fileList)) {
+        await addCapturedAsset(file, {
+          kind: "document",
+          slot: activeSlot,
+          taskId: task.id,
+        });
+      }
       reloadDocuments();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to save sample document.");
+      setError(err instanceof Error ? err.message : "Unable to save document.");
+    } finally {
+      if (cameraInputRef.current) cameraInputRef.current.value = "";
+      if (uploadInputRef.current) uploadInputRef.current.value = "";
+      setActiveSlot(null);
     }
   };
 
@@ -268,6 +259,23 @@ export function AgentCaptureDocs({
           <h1 className="max-w-[240px] truncate text-lg font-bold text-[#07183f]">Capture Documents</h1>
         </header>
 
+        <input
+          ref={cameraInputRef}
+          accept="image/*,application/pdf"
+          capture="environment"
+          className="hidden"
+          onChange={(event) => void handleCapturedFiles(event.target.files)}
+          type="file"
+        />
+        <input
+          ref={uploadInputRef}
+          accept="image/*,application/pdf"
+          className="hidden"
+          multiple
+          onChange={(event) => void handleCapturedFiles(event.target.files)}
+          type="file"
+        />
+
         <div className="mt-2 flex min-h-0 w-full flex-1 flex-col gap-4 overflow-y-auto pb-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <div className="flex w-full flex-none items-start gap-2.5 rounded-xl border border-[#d8e6ff] bg-[#f4f8ff] p-3 text-left">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="mt-0.5 h-5 w-5 flex-none text-[#1158d4]" aria-hidden="true">
@@ -287,8 +295,14 @@ export function AgentCaptureDocs({
               assets={assetsForSlot(slot.id)}
               expanded={expanded[slot.id]}
               onDelete={removeDocument}
-              onCameraCapture={() => void saveDummyDocument(slot, "camera")}
-              onUpload={() => void saveDummyDocument(slot, "upload")}
+              onCameraCapture={() => {
+                setActiveSlot(slot.id);
+                setTimeout(() => cameraInputRef.current?.click(), 0);
+              }}
+              onUpload={() => {
+                setActiveSlot(slot.id);
+                setTimeout(() => uploadInputRef.current?.click(), 0);
+              }}
               onToggleExpand={() => setExpanded((current) => ({ ...current, [slot.id]: !current[slot.id] }))}
             />
           ))}
