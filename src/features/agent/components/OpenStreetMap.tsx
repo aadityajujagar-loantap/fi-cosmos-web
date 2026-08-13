@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
 interface OpenStreetMapProps {
   className?: string;
@@ -15,7 +15,6 @@ interface OpenStreetMapProps {
   onMarkerClick?: (id: string) => void;
   selectedMarkerId?: string;
   userLocation?: { latitude: number; longitude: number };
-  // draggableMarkerId and onMarkerDrag kept for API compat but drag handled via popup in real Leaflet
   draggableMarkerId?: string;
   onMarkerDrag?: (id: string, location: { latitude: number; longitude: number }) => void;
   onMarkerDragEnd?: (id: string, location: { latitude: number; longitude: number }) => void;
@@ -31,33 +30,64 @@ function priorityColor(priority?: "HIGH" | "MEDIUM" | "LOW") {
   return "#ef3b3b";
 }
 
-// Build the full self-contained Leaflet HTML to inject in the iframe
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function zoomForSpan(zoomSpan: number) {
+  if (zoomSpan <= 0.014) return 15;
+  if (zoomSpan <= 0.04) return 14;
+  if (zoomSpan <= 0.09) return 13;
+  return 11;
+}
+
 function buildLeafletHtml(options: {
   centerLat: number;
   centerLng: number;
+  draggableMarkerId?: string;
   markers: Array<{ id: string; label: string; latitude: number; longitude: number; color: string; selected: boolean }>;
   userLocation?: { latitude: number; longitude: number };
+  zoom: number;
 }) {
   const markersJs = options.markers
-    .map(
-      (m) => `
-      (function() {
-        var icon = L.divIcon({
-          className: '',
-          html: '<div style="width:16px;height:16px;background:${m.color};border:2px solid white;border-radius:3px 3px 50% 3px;transform:rotate(45deg);box-shadow:0 2px 6px rgba(0,0,0,0.35);${m.selected ? "transform:rotate(45deg) scale(1.3);" : ""}"></div>',
-          iconSize: [16, 16],
-          iconAnchor: [8, 14],
-          popupAnchor: [0, -16],
-        });
-        var marker = L.marker([${m.latitude}, ${m.longitude}], { icon: icon })
-          .addTo(map)
-          .bindPopup('<b style="font-size:11px;color:#07183f">${m.label.replace(/'/g, "&#39;").replace(/"/g, "&quot;")}</b>');
-        marker.on('click', function() {
-          window.parent.postMessage({ type: 'markerClick', id: '${m.id}' }, '*');
-        });
-      })();
-    `,
-    )
+    .map((marker) => {
+      const markerId = JSON.stringify(marker.id);
+      const isDraggable = marker.id === options.draggableMarkerId;
+      const markerTransform = marker.selected ? "rotate(45deg) scale(1.3)" : "rotate(45deg)";
+
+      return `
+        (function() {
+          var markerId = ${markerId};
+          var icon = L.divIcon({
+            className: '',
+            html: '<div style="width:16px;height:16px;background:${marker.color};border:2px solid white;border-radius:3px 3px 50% 3px;transform:${markerTransform};box-shadow:0 2px 6px rgba(0,0,0,0.35);"></div>',
+            iconSize: [16, 16],
+            iconAnchor: [8, 14],
+            popupAnchor: [0, -16]
+          });
+          var pin = L.marker([${marker.latitude}, ${marker.longitude}], {
+            draggable: ${isDraggable},
+            icon: icon
+          }).addTo(map).bindPopup('<b style="font-size:11px;color:#07183f">${escapeHtml(marker.label)}</b>');
+          pin.on('click', function() {
+            window.parent.postMessage({ type: 'markerClick', id: markerId }, '*');
+          });
+          pin.on('drag', function(event) {
+            var point = event.target.getLatLng();
+            window.parent.postMessage({ type: 'markerDrag', id: markerId, latitude: point.lat, longitude: point.lng }, '*');
+          });
+          pin.on('dragend', function(event) {
+            var point = event.target.getLatLng();
+            window.parent.postMessage({ type: 'markerDragEnd', id: markerId, latitude: point.lat, longitude: point.lng }, '*');
+          });
+        })();
+      `;
+    })
     .join("\n");
 
   const userLocJs = options.userLocation
@@ -67,12 +97,12 @@ function buildLeafletHtml(options: {
         fillColor: '#1158d4',
         color: 'white',
         weight: 2,
-        fillOpacity: 1,
+        fillOpacity: 1
       }).addTo(map).bindPopup('<b style="font-size:11px;color:#1158d4">Your Location</b>');
     `
     : "";
 
-  return `<!DOCTYPE html>
+  return `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8"/>
@@ -82,21 +112,24 @@ function buildLeafletHtml(options: {
   <style>
     html, body { margin:0; padding:0; height:100%; width:100%; overflow:hidden; }
     #map { height:100%; width:100%; }
+    .leaflet-container { background:#dbeafe; font-family:Arial,sans-serif; }
     .leaflet-control-zoom { border-radius:10px!important; overflow:hidden; }
     .leaflet-control-zoom a { border-radius:0!important; font-size:16px!important; }
+    .leaflet-marker-draggable { cursor:grab!important; }
     .leaflet-popup-content-wrapper { border-radius:10px!important; box-shadow:0 4px 16px rgba(0,0,0,0.15)!important; }
   </style>
 </head>
 <body>
   <div id="map"></div>
   <script>
-    var map = L.map('map', { zoomControl: true, attributionControl: true }).setView([${options.centerLat}, ${options.centerLng}], 15);
+    var map = L.map('map', { attributionControl: true, zoomControl: true }).setView([${options.centerLat}, ${options.centerLng}], ${options.zoom});
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19
     }).addTo(map);
     ${markersJs}
     ${userLocJs}
+    setTimeout(function() { map.invalidateSize(); }, 150);
   </script>
 </body>
 </html>`;
@@ -105,73 +138,82 @@ function buildLeafletHtml(options: {
 export function OpenStreetMap({
   className = "",
   destinationLabel = "102, Sai Residency, Baner Road",
+  draggableMarkerId,
   latitude = DEFAULT_LAT,
   longitude = DEFAULT_LNG,
   markers = [],
   onMarkerClick,
+  onMarkerDrag,
+  onMarkerDragEnd,
   selectedMarkerId,
   userLocation,
+  zoomSpan = 0.018,
 }: OpenStreetMapProps) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-
   const activeMarkers = markers.length
     ? markers
     : [{ id: "destination", label: destinationLabel, latitude, longitude, priority: "HIGH" as const }];
 
   const centerLat = selectedMarkerId
-    ? (activeMarkers.find((m) => m.id === selectedMarkerId)?.latitude ?? latitude)
+    ? (activeMarkers.find((marker) => marker.id === selectedMarkerId)?.latitude ?? latitude)
     : latitude;
   const centerLng = selectedMarkerId
-    ? (activeMarkers.find((m) => m.id === selectedMarkerId)?.longitude ?? longitude)
+    ? (activeMarkers.find((marker) => marker.id === selectedMarkerId)?.longitude ?? longitude)
     : longitude;
 
   const htmlContent = buildLeafletHtml({
     centerLat,
     centerLng,
-    markers: activeMarkers.map((m) => ({
-      id: m.id,
-      label: m.label,
-      latitude: m.latitude,
-      longitude: m.longitude,
-      color: priorityColor(m.priority),
-      selected: m.id === selectedMarkerId || (!selectedMarkerId && activeMarkers[0]?.id === m.id),
+    draggableMarkerId,
+    markers: activeMarkers.map((marker) => ({
+      color: priorityColor(marker.priority),
+      id: marker.id,
+      label: marker.label,
+      latitude: marker.latitude,
+      longitude: marker.longitude,
+      selected: marker.id === selectedMarkerId || (!selectedMarkerId && activeMarkers[0]?.id === marker.id),
     })),
     userLocation,
+    zoom: zoomForSpan(zoomSpan),
   });
 
-  // Reload the iframe when center or markers change
-  useEffect(() => {
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-    const blob = new Blob([htmlContent], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    iframe.src = url;
-    return () => URL.revokeObjectURL(url);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [centerLat, centerLng, selectedMarkerId, userLocation?.latitude, userLocation?.longitude, activeMarkers.length]);
-
-  // Listen for marker click messages from the iframe
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       if (event.data?.type === "markerClick" && event.data?.id) {
         onMarkerClick?.(event.data.id as string);
+        return;
+      }
+
+      if ((event.data?.type === "markerDrag" || event.data?.type === "markerDragEnd") && event.data?.id) {
+        const location = {
+          latitude: Number(event.data.latitude),
+          longitude: Number(event.data.longitude),
+        };
+
+        if (!Number.isFinite(location.latitude) || !Number.isFinite(location.longitude)) return;
+
+        if (event.data.type === "markerDrag") {
+          onMarkerDrag?.(event.data.id as string, location);
+        } else {
+          onMarkerDragEnd?.(event.data.id as string, location);
+        }
       }
     };
+
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [onMarkerClick]);
+  }, [onMarkerClick, onMarkerDrag, onMarkerDragEnd]);
 
   return (
     <div className={`relative overflow-hidden bg-[#dfeaf6] ${className}`} aria-label={`Map near ${destinationLabel}`}>
       <iframe
-        ref={iframeRef}
         title="Location Map"
         className="h-full w-full border-0"
-        sandbox="allow-scripts allow-same-origin"
         loading="lazy"
+        sandbox="allow-scripts allow-same-origin allow-popups"
+        srcDoc={htmlContent}
       />
       <div className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-white/95 px-3 py-1.5 text-[10px] font-bold text-[#1158d4] shadow-sm">
-        © OpenStreetMap
+        (c) OpenStreetMap
       </div>
     </div>
   );

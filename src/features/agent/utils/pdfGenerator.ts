@@ -2,9 +2,48 @@ import { jsPDF } from "jspdf";
 import type { AgentTaskRecord } from "./tasks";
 import { loadCapturedAssets } from "./media";
 
-// Android-safe PDF download: uses blob URL + anchor click.
-// Falls back to window.open(dataURI) which works in all Android browsers / WebViews.
+type PdfBridgeMessage =
+  | { type: "fi-iflow/pdf-download/start"; id: string; filename: string; totalChunks: number }
+  | { type: "fi-iflow/pdf-download/chunk"; id: string; index: number; chunk: string }
+  | { type: "fi-iflow/pdf-download/complete"; id: string };
+
+declare global {
+  interface Window {
+    ReactNativeWebView?: {
+      postMessage: (message: string) => void;
+    };
+  }
+}
+
+const PDF_CHUNK_SIZE = 256 * 1024;
+
+function postPdfToNative(doc: jsPDF, filename: string) {
+  if (!window.ReactNativeWebView?.postMessage) return false;
+
+  const dataUri = doc.output("datauristring");
+  const base64 = dataUri.slice(dataUri.indexOf(",") + 1);
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const totalChunks = Math.ceil(base64.length / PDF_CHUNK_SIZE);
+
+  const post = (message: PdfBridgeMessage) => window.ReactNativeWebView?.postMessage(JSON.stringify(message));
+  post({ filename, id, totalChunks, type: "fi-iflow/pdf-download/start" });
+
+  for (let index = 0; index < totalChunks; index += 1) {
+    post({
+      chunk: base64.slice(index * PDF_CHUNK_SIZE, (index + 1) * PDF_CHUNK_SIZE),
+      id,
+      index,
+      type: "fi-iflow/pdf-download/chunk",
+    });
+  }
+
+  post({ id, type: "fi-iflow/pdf-download/complete" });
+  return true;
+}
+
 function downloadPdf(doc: jsPDF, filename: string) {
+  if (postPdfToNative(doc, filename)) return;
+
   try {
     const blob = doc.output("blob");
     const url = URL.createObjectURL(blob);

@@ -39,8 +39,6 @@ export function AgentUpdateChecklist({
   const [signatureCount] = useState(() => loadCapturedAssets(task.id, "signature").length);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
 
   // Questionnaire state variables
   const [residesVerified, setResidesVerified] = useState<string | null>(null);
@@ -105,30 +103,6 @@ export function AgentUpdateChecklist({
     return new Blob([buffer], { type: "audio/wav" });
   };
 
-  // Real MediaRecorder implementation — saves actual mic recording.
-  // Falls back to fake WAV if the browser blocks the mic.
-  const saveBlobAsVoice = async (blob: Blob, durationSeconds: number) => {
-    setVoiceError("");
-    const ext = blob.type.includes("ogg") ? "ogg" : "webm";
-    try {
-      const asset = await addCapturedBlob(blob, {
-        duration: durationSeconds,
-        kind: "voice",
-        mimeType: blob.type || "audio/webm",
-        name: `voice_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.${ext}`,
-        slot: "voice-remarks",
-        taskId: task.id,
-      });
-      setVoiceFile(asset);
-      setStep3Completed(true);
-      if (setCompletedStepsCount && completedStepsCount < 3) {
-        setCompletedStepsCount(3);
-      }
-    } catch (err) {
-      setVoiceError(err instanceof Error ? err.message : "Unable to save voice remark.");
-    }
-  };
-
   const handleSampleVoice = async (durationSeconds = 2) => {
     setVoiceError("");
     setPlaybackProgress(0);
@@ -189,7 +163,7 @@ export function AgentUpdateChecklist({
     }
   };
 
-  const handleStartRecord = async () => {
+  const handleStartRecord = () => {
     setVoiceError("");
     setPlaybackProgress(0);
     setIsPlayingVoice(false);
@@ -197,49 +171,12 @@ export function AgentUpdateChecklist({
     setVoiceFile(null);
     setRecordingSeconds(0);
 
-    // Try real MediaRecorder first
-    if (typeof MediaRecorder !== "undefined" && navigator.mediaDevices?.getUserMedia) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-          ? "audio/webm;codecs=opus"
-          : MediaRecorder.isTypeSupported("audio/webm")
-            ? "audio/webm"
-            : "audio/ogg";
-        const recorder = new MediaRecorder(stream, { mimeType });
-        audioChunksRef.current = [];
-        recorder.ondataavailable = (e) => {
-          if (e.data.size > 0) audioChunksRef.current.push(e.data);
-        };
-        recorder.onstop = () => {
-          stream.getTracks().forEach((t) => t.stop());
-          const blob = new Blob(audioChunksRef.current, { type: mimeType });
-          void saveBlobAsVoice(blob, recordingSeconds || 1);
-        };
-        mediaRecorderRef.current = recorder;
-        recorder.start();
-        setIsRecording(true);
-        return;
-      } catch {
-        // Mic permission denied or not available — fall through to fake
-        setVoiceError("Microphone access denied. Using simulated recording.");
-      }
-    }
-
-    // Fallback: start fake recording timer
     setIsRecording(true);
   };
 
   const handleStopRecord = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current = null;
-      setIsRecording(false);
-    } else {
-      // Fake fallback path
-      setIsRecording(false);
-      void handleSampleVoice(Math.max(recordingSeconds, 2));
-    }
+    setIsRecording(false);
+    void handleSampleVoice(Math.max(recordingSeconds, 2));
   };
 
   const handleDeleteVoice = () => {
