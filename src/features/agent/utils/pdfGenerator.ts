@@ -17,7 +17,7 @@ declare global {
 
 const PDF_CHUNK_SIZE = 256 * 1024;
 
-function postPdfToNative(doc: jsPDF, filename: string) {
+async function postPdfToNative(doc: jsPDF, filename: string): Promise<boolean> {
   if (!window.ReactNativeWebView?.postMessage) return false;
 
   const dataUri = doc.output("datauristring");
@@ -26,7 +26,9 @@ function postPdfToNative(doc: jsPDF, filename: string) {
   const totalChunks = Math.ceil(base64.length / PDF_CHUNK_SIZE);
 
   const post = (message: PdfBridgeMessage) => window.ReactNativeWebView?.postMessage(JSON.stringify(message));
+  
   post({ filename, id, totalChunks, type: "fi-iflow/pdf-download/start" });
+  await new Promise((resolve) => setTimeout(resolve, 50));
 
   for (let index = 0; index < totalChunks; index += 1) {
     post({
@@ -35,14 +37,15 @@ function postPdfToNative(doc: jsPDF, filename: string) {
       index,
       type: "fi-iflow/pdf-download/chunk",
     });
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
 
   post({ id, type: "fi-iflow/pdf-download/complete" });
   return true;
 }
 
-function downloadPdf(doc: jsPDF, filename: string) {
-  if (postPdfToNative(doc, filename)) return;
+async function downloadPdf(doc: jsPDF, filename: string) {
+  if (await postPdfToNative(doc, filename)) return;
 
   try {
     const blob = doc.output("blob");
