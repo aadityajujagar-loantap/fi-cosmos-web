@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Step } from "../../../types";
 import { getActiveAgentTask, isTerminalStatus, updateAgentTask, type AgentTaskRecord } from "../utils/tasks";
+import { generateTaskPdf } from "../utils/pdfGenerator";
 
 interface DetailItemProps {
   icon: React.ReactNode;
@@ -302,13 +303,27 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
         {/* Floating Footer Shutter */}
         <footer className="flex flex-none items-center gap-3 border-t border-[#eef2f6] bg-white pt-3">
           {isClosed ? (
-            <button
-              onClick={onBack}
-              type="button"
-              className="w-full bg-[#07183f] text-white hover:bg-[#0f1f45] h-12 rounded-[14px] font-bold text-sm flex items-center justify-center cursor-pointer shadow-lg border-0"
-            >
-              Back to Tasks
-            </button>
+            <div className="flex flex-col gap-2 w-full">
+              <button
+                onClick={onBack}
+                type="button"
+                className="w-full bg-[#07183f] text-white hover:bg-[#0f1f45] h-12 rounded-[14px] font-bold text-sm flex items-center justify-center cursor-pointer shadow-lg border-0"
+              >
+                Back to Tasks
+              </button>
+              {task.status === "Completed" && (
+                <button
+                  onClick={() => generateTaskPdf(task)}
+                  type="button"
+                  className="w-full bg-[#1158d4] text-white hover:bg-[#0f4ebc] h-12 rounded-[14px] font-bold text-sm flex items-center justify-center gap-2 cursor-pointer shadow-md border-0"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4 text-white">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                  </svg>
+                  Download Report
+                </button>
+              )}
+            </div>
           ) : isAccepted ? (
             <button
               onClick={() => onNavigate?.("task-in-progress")}

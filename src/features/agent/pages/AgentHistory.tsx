@@ -373,13 +373,34 @@ export function AgentHistory({ onNavigate }: AgentHistoryProps) {
                         {task.title}
                       </h3>
 
-                      <div className="mt-1.5 grid grid-cols-[12px_minmax(0,1fr)_auto] items-center gap-1 text-[10px] font-medium leading-none text-[#5c6a85]">
+                      <div className="mt-1.5 flex items-center gap-1.5 text-[10px] font-medium leading-none text-[#5c6a85] w-full">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3 flex-none text-[#1158d4]">
                           <path d="M12 21s7-5.2 7-12a7 7 0 0 0-14 0c0 6.8 7 12 7 12Z" />
                           <circle cx="12" cy="9" r="2" />
                         </svg>
-                        <span className="truncate">{task.location}</span>
-                        <span className="whitespace-nowrap text-[#5c6a85]">{task.distance}</span>
+                        <span className="truncate flex-1 text-left">{task.location}</span>
+                        
+                        {task.status === "COMPLETED" && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const allTasks = loadAgentTasks();
+                              const targetTask = allTasks.find(t => t.id === task.taskId);
+                              if (targetTask) {
+                                generateTaskPdf(targetTask);
+                              }
+                            }}
+                            type="button"
+                            aria-label="Download Report"
+                            className="w-5 h-5 rounded-full border border-[#d8e0eb] bg-white text-[#1158d4] hover:bg-[#edf4ff] hover:border-[#1158d4] flex items-center justify-center cursor-pointer shadow-xs z-10 flex-none"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-2.5 h-2.5">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                            </svg>
+                          </button>
+                        )}
+                        
+                        <span className="whitespace-nowrap text-[#5c6a85] flex-none">{task.distance}</span>
                       </div>
 
                       <div className="mt-1.5 grid grid-cols-[12px_minmax(0,1fr)] items-center gap-1 text-[10px] font-medium leading-none text-[#5c6a85]">
@@ -392,26 +413,6 @@ export function AgentHistory({ onNavigate }: AgentHistoryProps) {
                         <span className="truncate">{task.timeRange}</span>
                       </div>
                     </div>
-
-                    {task.status === "COMPLETED" && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          const allTasks = loadAgentTasks();
-                          const targetTask = allTasks.find(t => t.id === task.taskId);
-                          if (targetTask) {
-                            generateTaskPdf(targetTask);
-                          }
-                        }}
-                        type="button"
-                        aria-label="Download Report"
-                        className="absolute right-9 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full border border-slate-200 bg-[#f8fafc] text-[#1158d4] hover:bg-[#edf4ff] hover:border-[#1158d4] flex items-center justify-center cursor-pointer shadow-sm z-10"
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
-                        </svg>
-                      </button>
-                    )}
 
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400">
                       <path d="m9 5 7 7-7 7" />

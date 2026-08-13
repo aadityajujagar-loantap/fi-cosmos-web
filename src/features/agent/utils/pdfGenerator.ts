@@ -239,7 +239,7 @@ export function generateTaskPdf(task: AgentTaskRecord) {
     }
   } else {
     // Generate beautiful mock cursive signature if none recorded
-    doc.setFont("courier", "oblique");
+    doc.setFont("courier", "italic");
     doc.setFontSize(16);
     doc.setTextColor(17, 88, 212);
     doc.text(task.customer, margin + 20, y + 18);
@@ -256,7 +256,7 @@ export function generateTaskPdf(task: AgentTaskRecord) {
   doc.text("Verifying Executive Signature", margin + contentWidth / 2 + 5, y + 6);
 
   // Draw agent mock script signature
-  doc.setFont("courier", "oblique");
+  doc.setFont("courier", "italic");
   doc.setFontSize(15);
   doc.setTextColor(7, 24, 63);
   doc.text("Agent Verified", margin + contentWidth / 2 + 20, y + 18);
