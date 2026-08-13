@@ -238,7 +238,7 @@ export function generateTaskPdf(task: AgentTaskRecord) {
     doc.setFontSize(9);
     doc.text("FIELD VISIT CHECKLIST COMPLIANCE STATUS", margin + 5, y + 6);
 
-    let checklistY = y + 13;
+    const checklistY = y + 13;
     doc.setFontSize(8);
     task.checklist.forEach((item, index) => {
       const col = index % 2;

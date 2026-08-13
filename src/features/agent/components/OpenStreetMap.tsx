@@ -14,6 +14,11 @@ interface OpenStreetMapProps {
   }>;
   onMarkerClick?: (id: string) => void;
   selectedMarkerId?: string;
+  trails?: Array<{
+    color?: string;
+    coordinates: Array<{ latitude: number; longitude: number }>;
+    id: string;
+  }>;
   userLocation?: { latitude: number; longitude: number };
   draggableMarkerId?: string;
   onMarkerDrag?: (id: string, location: { latitude: number; longitude: number }) => void;
@@ -51,6 +56,7 @@ function buildLeafletHtml(options: {
   centerLng: number;
   draggableMarkerId?: string;
   markers: Array<{ id: string; label: string; latitude: number; longitude: number; color: string; selected: boolean }>;
+  trails?: Array<{ color: string; coordinates: Array<{ latitude: number; longitude: number }> }>;
   userLocation?: { latitude: number; longitude: number };
   zoom: number;
 }) {
@@ -87,6 +93,13 @@ function buildLeafletHtml(options: {
           });
         })();
       `;
+    })
+    .join("\n");
+
+  const trailsJs = (options.trails || [])
+    .map((trail) => {
+      const points = JSON.stringify(trail.coordinates.map((point) => [point.latitude, point.longitude]));
+      return `L.polyline(${points}, { color: '${trail.color}', weight: 4, opacity: 0.78, dashArray: '6 8' }).addTo(map);`;
     })
     .join("\n");
 
@@ -127,6 +140,7 @@ function buildLeafletHtml(options: {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19
     }).addTo(map);
+    ${trailsJs}
     ${markersJs}
     ${userLocJs}
     setTimeout(function() { map.invalidateSize(); }, 150);
@@ -146,6 +160,7 @@ export function OpenStreetMap({
   onMarkerDrag,
   onMarkerDragEnd,
   selectedMarkerId,
+  trails = [],
   userLocation,
   zoomSpan = 0.018,
 }: OpenStreetMapProps) {
@@ -171,6 +186,10 @@ export function OpenStreetMap({
       latitude: marker.latitude,
       longitude: marker.longitude,
       selected: marker.id === selectedMarkerId || (!selectedMarkerId && activeMarkers[0]?.id === marker.id),
+    })),
+    trails: trails.map((trail) => ({
+      color: trail.color || "#1158d4",
+      coordinates: trail.coordinates,
     })),
     userLocation,
     zoom: zoomForSpan(zoomSpan),

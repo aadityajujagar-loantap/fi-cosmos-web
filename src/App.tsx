@@ -23,7 +23,7 @@ import { AgentUpdateChecklist } from "./features/agent/pages/AgentUpdateChecklis
 import { AgentCaptureDocs } from "./features/agent/pages/AgentCaptureDocs";
 import { AgentCapturePhoto } from "./features/agent/pages/AgentCapturePhoto";
 import { AgentCustomerSignature } from "./features/agent/pages/AgentCustomerSignature";
-import { AdminPlaceholder } from "./features/admin/pages/AdminPlaceholder";
+import { AdminPortal } from "./features/admin/pages/AdminPortal";
 import { Popup } from "./components/ui/Popup";
 import { verifyMobileNumber, verifyOtpCode } from "./services/auth";
 import type { Step } from "./types";
@@ -255,15 +255,72 @@ function AgentApp() {
   );
 }
 
+function AccessDenied() {
+  return (
+    <div className="min-h-screen w-full flex items-center justify-center bg-[#07183f] relative overflow-hidden font-sans px-5">
+      {/* Background glowing gradients */}
+      <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] rounded-full bg-[#1158d4]/20 blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] rounded-full bg-[#088d27]/10 blur-[120px] pointer-events-none" />
+
+      {/* Glassmorphic Container */}
+      <div className="w-full max-w-[400px] bg-white/5 border border-white/10 backdrop-blur-xl rounded-[28px] p-8 shadow-2xl flex flex-col items-center text-center relative z-10">
+        {/* Animated Icon Container */}
+        <div className="w-16 h-16 rounded-full bg-[#ee0f1a]/10 border border-[#ee0f1a]/20 flex items-center justify-center relative mb-6">
+          <div className="absolute inset-0 rounded-full bg-[#ee0f1a]/5 animate-ping" />
+          <svg viewBox="0 0 24 24" fill="none" stroke="#ee0f1a" strokeWidth="2.5" className="w-7 h-7 relative z-10">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+        </div>
+
+        {/* Brand */}
+        <span className="text-[10px] tracking-[0.2em] font-black text-[#1158d4] uppercase mb-2">fi-iFlow Secure Gate</span>
+
+        {/* Title */}
+        <h1 className="text-xl font-bold text-white mb-3">Access Restricted</h1>
+
+        {/* Description */}
+        <p className="text-xs text-slate-400 font-medium leading-relaxed mb-6">
+          This portal is strictly reserved for authorized Field Agents. Direct browser access has been disabled to protect operations.
+        </p>
+
+        <div className="w-full bg-white/5 border border-white/5 rounded-2xl p-4 text-left flex items-start gap-3 mb-6">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="2" className="w-5 h-5 flex-none mt-0.5">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+          <div className="text-[11px] font-medium leading-normal text-slate-300">
+            <p className="m-0 font-bold text-white mb-0.5">How to access:</p>
+            <p className="m-0">Please launch the official fi-iFlow app on your Android or iOS device to sync tasks and verify field cases.</p>
+          </div>
+        </div>
+
+        {/* Security Audit Badge */}
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/5">
+          <span className="w-2 h-2 rounded-full bg-[#088d27] animate-pulse" />
+          <span className="text-[9px] font-bold tracking-wide text-slate-400 uppercase">Device Security Verified</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const pathname = window.location.pathname.toLowerCase();
-  
+
   // Strictly determine if we render the agent mobile module
   const isAgent = pathname.startsWith("/agent");
 
   if (isAgent) {
-    return <AgentApp />;
+    const isMobileApp = navigator.userAgent.includes("fi-iflow-mobile-app");
+
+    if (isMobileApp) {
+      return <AgentApp />;
+    }
+
+    return <AccessDenied />;
   }
 
-  return <AdminPlaceholder />;
+  return <AdminPortal />;
 }

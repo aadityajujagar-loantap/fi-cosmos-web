@@ -1,0 +1,44 @@
+.admin-shell {
+  --admin-bg: #f5f7fb;
+  --admin-surface: #ffffff;
+  --admin-surface-subtle: #f8fafd;
+  --admin-border: #dfe7f2;
+  --admin-border-strong: #c8d5e8;
+  --admin-ink: #07183f;
+  --admin-muted: #62728b;
+  --admin-soft: #8b9ab0;
+  --admin-primary: #1454c8;
+  --admin-primary-dark: #0b357f;
+  --admin-success: #07883a;
+  --admin-warning: #b77900;
+  --admin-danger: #d92525;
+  --admin-radius: 14px;
+  background: var(--admin-bg);
+}
+
+.admin-shell button:focus-visible,
+.admin-shell a:focus-visible,
+.admin-shell input:focus-visible,
+.admin-shell select:focus-visible {
+  outline: 2px solid rgba(20, 84, 200, 0.72) !important;
+  outline-offset: 2px !important;
+}
+
+.admin-shell ::selection {
+  background: rgba(20, 84, 200, 0.16);
+}
+
+.admin-scrollbar {
+  scrollbar-color: #b6c3d6 transparent;
+  scrollbar-width: thin;
+}
+
+.admin-scrollbar::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+
+.admin-scrollbar::-webkit-scrollbar-thumb {
+  background: #b6c3d6;
+  border-radius: 999px;
+}
