@@ -135,6 +135,99 @@ export function AgentUpdateChecklist({
     }
   };
 
+  const createSampleVoiceBlob = () => {
+    const sampleRate = 8000;
+    const durationSeconds = 2;
+    const sampleCount = sampleRate * durationSeconds;
+    const buffer = new ArrayBuffer(44 + sampleCount * 2);
+    const view = new DataView(buffer);
+    const writeString = (offset: number, value: string) => {
+      for (let index = 0; index < value.length; index += 1) {
+        view.setUint8(offset + index, value.charCodeAt(index));
+      }
+    };
+
+    writeString(0, "RIFF");
+    view.setUint32(4, 36 + sampleCount * 2, true);
+    writeString(8, "WAVE");
+    writeString(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeString(36, "data");
+    view.setUint32(40, sampleCount * 2, true);
+
+    for (let index = 0; index < sampleCount; index += 1) {
+      const fade = Math.min(1, index / 800, (sampleCount - index) / 800);
+      const value = Math.sin((2 * Math.PI * 440 * index) / sampleRate) * 0.16 * fade;
+      view.setInt16(44 + index * 2, value * 32767, true);
+    }
+
+    return new Blob([buffer], { type: "audio/wav" });
+  };
+
+  const handleSampleVoice = async () => {
+    setVoiceError("");
+    setPlaybackProgress(0);
+    setIsPlayingVoice(false);
+    audioRef.current?.pause();
+
+    try {
+      const asset = await addCapturedBlob(createSampleVoiceBlob(), {
+        duration: 2,
+        kind: "voice",
+        mimeType: "audio/wav",
+        name: `sample_voice_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.wav`,
+        slot: "voice-remarks",
+        taskId: task.id,
+      });
+      setVoiceFile(asset);
+      setStep3Completed(true);
+      if (setCompletedStepsCount && completedStepsCount < 3) {
+        setCompletedStepsCount(3);
+      }
+    } catch (err) {
+      setVoiceError(err instanceof Error ? err.message : "Unable to save sample voice.");
+    }
+  };
+
+  const handleSampleProof = async () => {
+    setProofError("");
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="900" height="620" viewBox="0 0 900 620">
+        <rect width="900" height="620" rx="28" fill="#f8fafc"/>
+        <rect x="58" y="62" width="784" height="496" rx="18" fill="#fff" stroke="#d8e0eb" stroke-width="6"/>
+        <rect x="98" y="112" width="260" height="34" rx="10" fill="#1158d4"/>
+        <rect x="98" y="190" width="570" height="24" rx="8" fill="#cbd5e1"/>
+        <rect x="98" y="240" width="650" height="22" rx="8" fill="#e2e8f0"/>
+        <rect x="98" y="290" width="610" height="22" rx="8" fill="#e2e8f0"/>
+        <rect x="98" y="390" width="360" height="88" rx="14" fill="#edf5ff" stroke="#1158d4" stroke-width="3"/>
+        <text x="120" y="445" fill="#1158d4" font-family="Arial, sans-serif" font-size="34" font-weight="700">Sample Address Proof</text>
+      </svg>
+    `;
+
+    try {
+      const asset = await addCapturedBlob(new Blob([svg], { type: "image/svg+xml" }), {
+        kind: "document",
+        mimeType: "image/svg+xml",
+        name: "sample-address-proof.svg",
+        slot: "address-verification",
+        taskId: task.id,
+      });
+      setUploadedProof(asset);
+      setStep3Completed(true);
+      if (setCompletedStepsCount && completedStepsCount < 3) {
+        setCompletedStepsCount(3);
+      }
+    } catch (err) {
+      setProofError(err instanceof Error ? err.message : "Unable to save sample proof.");
+    }
+  };
+
   const handleStartRecord = async () => {
     setVoiceError("");
     setPlaybackProgress(0);
@@ -602,11 +695,11 @@ export function AgentUpdateChecklist({
                       </div>
                     </div>
                   ) : shouldUseVoiceFileCapture() ? (
-                    <label className="border border-[#cbdbe5] rounded-xl py-2 px-3 bg-white flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 text-xs font-bold text-[#1158d4] outline-none">
+                    <label className="relative border border-[#cbdbe5] rounded-xl py-2 px-3 bg-white flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 text-xs font-bold text-[#1158d4] outline-none overflow-hidden">
                       <input
                         accept="audio/*"
                         capture
-                        className="sr-only"
+                        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                         onChange={(event) => {
                           const input = event.currentTarget;
                           void handleVoiceFile(input.files, () => {
@@ -636,25 +729,34 @@ export function AgentUpdateChecklist({
                     </button>
                   )}
                   {!isRecording ? (
-                    <label
-                      className="border border-[#d8e0eb] rounded-xl py-2 px-3 bg-white flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 text-xs font-bold text-[#5c6a85] outline-none"
-                    >
-                      <input
-                        accept="audio/*"
-                        className="sr-only"
-                        onChange={(event) => {
-                          const input = event.currentTarget;
-                          void handleVoiceFile(input.files, () => {
-                            input.value = "";
-                          });
-                        }}
-                        type="file"
-                      />
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4 text-[#1158d4]">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
-                      </svg>
-                      <span>Upload Voice File</span>
-                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label
+                        className="relative border border-[#d8e0eb] rounded-xl py-2 px-3 bg-white flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 text-xs font-bold text-[#5c6a85] outline-none overflow-hidden"
+                      >
+                        <input
+                          accept="audio/*"
+                          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                          onChange={(event) => {
+                            const input = event.currentTarget;
+                            void handleVoiceFile(input.files, () => {
+                              input.value = "";
+                            });
+                          }}
+                          type="file"
+                        />
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4 text-[#1158d4]">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+                        </svg>
+                        <span>Upload Voice</span>
+                      </label>
+                      <button
+                        onClick={() => void handleSampleVoice()}
+                        type="button"
+                        className="border border-[#d8e0eb] rounded-xl py-2 px-3 bg-[#f8fafc] flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 text-xs font-bold text-[#5c6a85] outline-none"
+                      >
+                        Sample Voice
+                      </button>
+                    </div>
                   ) : null}
                   {voiceError ? <p className="m-0 text-[10px] font-bold text-[#ee0f1a]">{voiceError}</p> : null}
                 </div>
@@ -680,11 +782,11 @@ export function AgentUpdateChecklist({
                   <p className="m-0 text-[10px] text-[#8f98a8] leading-none">Add supporting photo of address (e.g., house number, name plate)</p>
                   
                   <label
-                    className="mt-1 border-2 border-dashed border-[#cbdbe5] rounded-xl p-4 bg-[#f8fafc] flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-slate-50"
+                    className="relative mt-1 border-2 border-dashed border-[#cbdbe5] rounded-xl p-4 bg-[#f8fafc] flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-slate-50 overflow-hidden"
                   >
                     <input
                       accept="image/*,application/pdf"
-                      className="sr-only"
+                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                       onChange={(event) => {
                         const input = event.currentTarget;
                         setProofError("");
@@ -711,6 +813,13 @@ export function AgentUpdateChecklist({
                       </>
                     )}
                   </label>
+                  <button
+                    onClick={() => void handleSampleProof()}
+                    type="button"
+                    className="border border-[#d8e0eb] rounded-xl py-2 px-3 bg-white flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 text-xs font-bold text-[#5c6a85] outline-none"
+                  >
+                    Use Sample Proof
+                  </button>
                   {proofError ? <p className="m-0 text-[10px] font-bold text-[#ee0f1a]">{proofError}</p> : null}
                 </div>
               </div>

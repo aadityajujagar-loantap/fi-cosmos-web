@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Step } from "../../../types";
-import { addCapturedAsset, deleteCapturedAsset, loadCapturedAssets, type CapturedAsset } from "../utils/media";
+import { addCapturedAsset, addCapturedBlob, deleteCapturedAsset, loadCapturedAssets, type CapturedAsset } from "../utils/media";
 import { getActiveAgentTask } from "../utils/tasks";
 
 interface DocumentSlotConfig {
@@ -15,6 +15,7 @@ interface DocumentSlotProps extends DocumentSlotConfig {
   expanded: boolean;
   onDelete: (assetId: string) => void;
   onCameraFiles: (files: FileList | null) => void;
+  onSampleDocument: () => void;
   onUploadFiles: (files: FileList | null) => void;
   onToggleExpand: () => void;
 }
@@ -86,6 +87,7 @@ function DocumentSlot({
   expanded,
   onCameraFiles,
   onDelete,
+  onSampleDocument,
   onToggleExpand,
   onUploadFiles,
   required,
@@ -133,12 +135,12 @@ function DocumentSlot({
                 <DocumentPreview key={asset.id} asset={asset} onDelete={() => onDelete(asset.id)} />
               ))}
               <label
-                className="flex aspect-[4/3] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-[#cbdbe5] bg-[#f8fafc] text-[#1158d4] hover:bg-slate-50"
+                className="relative flex aspect-[4/3] cursor-pointer flex-col items-center justify-center gap-1.5 overflow-hidden rounded-lg border-2 border-dashed border-[#cbdbe5] bg-[#f8fafc] text-[#1158d4] hover:bg-slate-50"
               >
                 <input
                   accept="image/*"
                   capture="environment"
-                  className="sr-only"
+                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                   onChange={(event) => onCameraFiles(event.currentTarget.files)}
                   type="file"
                 />
@@ -148,14 +150,14 @@ function DocumentSlot({
             </div>
           ) : null}
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <label
-              className="flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-[#1158d4] text-xs font-bold text-white"
+              className="relative flex h-10 cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-xl bg-[#1158d4] text-xs font-bold text-white"
             >
               <input
                 accept="image/*"
                 capture="environment"
-                className="sr-only"
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                 onChange={(event) => onCameraFiles(event.currentTarget.files)}
                 type="file"
               />
@@ -163,11 +165,11 @@ function DocumentSlot({
               Camera
             </label>
             <label
-              className="flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#d8e0eb] bg-white text-xs font-bold text-[#1158d4]"
+              className="relative flex h-10 cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-xl border border-[#d8e0eb] bg-white text-xs font-bold text-[#1158d4]"
             >
               <input
                 accept="image/*,application/pdf"
-                className="sr-only"
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                 multiple
                 onChange={(event) => onUploadFiles(event.currentTarget.files)}
                 type="file"
@@ -177,6 +179,13 @@ function DocumentSlot({
               </svg>
               Upload
             </label>
+            <button
+              onClick={onSampleDocument}
+              type="button"
+              className="flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#d8e0eb] bg-[#f8fafc] text-xs font-bold text-[#5c6a85]"
+            >
+              Sample
+            </button>
           </div>
         </div>
       ) : null}
@@ -224,6 +233,38 @@ export function AgentCaptureDocs({
       reloadDocuments();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save document.");
+    }
+  };
+
+  const saveSampleDocument = async (slot: DocumentSlotConfig) => {
+    setError("");
+    const createdAt = new Date().toLocaleString();
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="900" height="620" viewBox="0 0 900 620">
+        <rect width="900" height="620" rx="28" fill="#f8fafc"/>
+        <rect x="56" y="56" width="788" height="508" rx="18" fill="#ffffff" stroke="#d8e0eb" stroke-width="6"/>
+        <rect x="92" y="100" width="210" height="32" rx="10" fill="#1158d4"/>
+        <rect x="92" y="170" width="560" height="24" rx="8" fill="#cbd5e1"/>
+        <rect x="92" y="220" width="650" height="22" rx="8" fill="#e2e8f0"/>
+        <rect x="92" y="268" width="600" height="22" rx="8" fill="#e2e8f0"/>
+        <rect x="92" y="316" width="480" height="22" rx="8" fill="#e2e8f0"/>
+        <rect x="92" y="402" width="300" height="84" rx="14" fill="#edf5ff" stroke="#1158d4" stroke-width="3"/>
+        <text x="112" y="454" fill="#1158d4" font-family="Arial, sans-serif" font-size="34" font-weight="700">${slot.title}</text>
+        <text x="92" y="532" fill="#64748b" font-family="Arial, sans-serif" font-size="24">Sample document generated ${createdAt}</text>
+      </svg>
+    `;
+
+    try {
+      await addCapturedBlob(new Blob([svg], { type: "image/svg+xml" }), {
+        kind: "document",
+        mimeType: "image/svg+xml",
+        name: `${slot.id}-sample-document.svg`,
+        slot: slot.id,
+        taskId: task.id,
+      });
+      reloadDocuments();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save sample document.");
     }
   };
 
@@ -287,6 +328,7 @@ export function AgentCaptureDocs({
               expanded={expanded[slot.id]}
               onDelete={removeDocument}
               onCameraFiles={(files) => void saveFiles(slot.id, files)}
+              onSampleDocument={() => void saveSampleDocument(slot)}
               onUploadFiles={(files) => void saveFiles(slot.id, files)}
               onToggleExpand={() => setExpanded((current) => ({ ...current, [slot.id]: !current[slot.id] }))}
             />
