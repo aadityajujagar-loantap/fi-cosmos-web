@@ -72,7 +72,7 @@ export function PhoneInput({ countryCode = "+91", onCountryCodeClick, className 
           </svg>
         </button>
         <input
-          className="h-full min-w-0 flex-1 border-0 pl-3 pr-1 text-xl font-bold text-[#091733] outline-none placeholder:text-sm placeholder:font-medium placeholder:text-[#8f98a8]"
+          className="h-full min-w-0 flex-1 border-0 pl-3 pr-1 text-base font-medium text-[#091733] outline-none placeholder:text-sm placeholder:font-medium placeholder:text-[#8f98a8]"
           style={{ ...style, boxShadow: "none", outline: "none" }}
           {...props}
         />

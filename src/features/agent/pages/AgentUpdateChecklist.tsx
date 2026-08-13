@@ -36,8 +36,6 @@ export function AgentUpdateChecklist({
   const [photoCount] = useState(() => loadCapturedAssets(task.id, "photo").length);
   const [documentCount] = useState(() => loadCapturedAssets(task.id, "document").length);
   const [signatureCount] = useState(() => loadCapturedAssets(task.id, "signature").length);
-  const proofInputRef = useRef<HTMLInputElement>(null);
-  const voiceInputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioStreamRef = useRef<MediaStream | null>(null);
@@ -145,13 +143,11 @@ export function AgentUpdateChecklist({
 
     if (shouldUseVoiceFileCapture()) {
       setVoiceError("");
-      voiceInputRef.current?.click();
       return;
     }
 
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setVoiceError("Voice recording is not supported on this device. Use voice file upload.");
-      voiceInputRef.current?.click();
       return;
     }
 
@@ -177,13 +173,12 @@ export function AgentUpdateChecklist({
       stopVoiceStream();
       setIsRecording(false);
       setVoiceError("Microphone permission was denied. Use voice file upload.");
-      voiceInputRef.current?.click();
     } finally {
       setIsStartingRecording(false);
     }
   };
 
-  const handleVoiceFile = async (fileList: FileList | null) => {
+  const handleVoiceFile = async (fileList: FileList | null, resetInput?: () => void) => {
     const file = fileList?.[0];
     if (!file) return;
 
@@ -198,7 +193,7 @@ export function AgentUpdateChecklist({
     } catch (err) {
       setVoiceError(err instanceof Error ? err.message : "Unable to save voice remarks.");
     } finally {
-      if (voiceInputRef.current) voiceInputRef.current.value = "";
+      resetInput?.();
     }
   };
 
@@ -263,12 +258,7 @@ export function AgentUpdateChecklist({
 
   const progressPercent = Math.round((completedCount / 5) * 100);
 
-  const handleUploadClick = () => {
-    setProofError("");
-    proofInputRef.current?.click();
-  };
-
-  const handleProofFile = async (fileList: FileList | null) => {
+  const handleProofFile = async (fileList: FileList | null, resetInput?: () => void) => {
     const file = fileList?.[0];
     if (!file) return;
 
@@ -283,7 +273,7 @@ export function AgentUpdateChecklist({
     } catch (err) {
       setProofError(err instanceof Error ? err.message : "Unable to save proof.");
     } finally {
-      if (proofInputRef.current) proofInputRef.current.value = "";
+      resetInput?.();
     }
   };
 
@@ -327,22 +317,6 @@ export function AgentUpdateChecklist({
         </header>
 
         {/* Scrollable Checklist */}
-        <input
-          ref={voiceInputRef}
-          accept="audio/*"
-          capture
-          className="hidden"
-          onChange={(event) => void handleVoiceFile(event.target.files)}
-          type="file"
-        />
-        <input
-          ref={proofInputRef}
-          accept="image/*,application/pdf"
-          className="hidden"
-          onChange={(event) => void handleProofFile(event.target.files)}
-          type="file"
-        />
-
         <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] w-full mt-2 flex flex-col gap-4 pb-4">
           
           {/* Progress Card */}
@@ -627,8 +601,27 @@ export function AgentUpdateChecklist({
                         </div>
                       </div>
                     </div>
+                  ) : shouldUseVoiceFileCapture() ? (
+                    <label className="border border-[#cbdbe5] rounded-xl py-2 px-3 bg-white flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 text-xs font-bold text-[#1158d4] outline-none">
+                      <input
+                        accept="audio/*"
+                        capture
+                        className="sr-only"
+                        onChange={(event) => {
+                          const input = event.currentTarget;
+                          void handleVoiceFile(input.files, () => {
+                            input.value = "";
+                          });
+                        }}
+                        type="file"
+                      />
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4 text-[#1158d4]">
+                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8" />
+                      </svg>
+                      <span>Record Voice Remarks</span>
+                    </label>
                   ) : (
-                    /* Default Record Button */
                     <button
                       onClick={() => void handleStartRecord()}
                       type="button"
@@ -643,16 +636,25 @@ export function AgentUpdateChecklist({
                     </button>
                   )}
                   {!isRecording ? (
-                    <button
-                      onClick={() => voiceInputRef.current?.click()}
-                      type="button"
+                    <label
                       className="border border-[#d8e0eb] rounded-xl py-2 px-3 bg-white flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 text-xs font-bold text-[#5c6a85] outline-none"
                     >
+                      <input
+                        accept="audio/*"
+                        className="sr-only"
+                        onChange={(event) => {
+                          const input = event.currentTarget;
+                          void handleVoiceFile(input.files, () => {
+                            input.value = "";
+                          });
+                        }}
+                        type="file"
+                      />
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4 text-[#1158d4]">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
                       </svg>
                       <span>Upload Voice File</span>
-                    </button>
+                    </label>
                   ) : null}
                   {voiceError ? <p className="m-0 text-[10px] font-bold text-[#ee0f1a]">{voiceError}</p> : null}
                 </div>
@@ -677,10 +679,21 @@ export function AgentUpdateChecklist({
                   <label className="text-[10px] font-bold text-[#8f98a8]">Upload Proof (Optional)</label>
                   <p className="m-0 text-[10px] text-[#8f98a8] leading-none">Add supporting photo of address (e.g., house number, name plate)</p>
                   
-                  <div
-                    onClick={handleUploadClick}
+                  <label
                     className="mt-1 border-2 border-dashed border-[#cbdbe5] rounded-xl p-4 bg-[#f8fafc] flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-slate-50"
                   >
+                    <input
+                      accept="image/*,application/pdf"
+                      className="sr-only"
+                      onChange={(event) => {
+                        const input = event.currentTarget;
+                        setProofError("");
+                        void handleProofFile(input.files, () => {
+                          input.value = "";
+                        });
+                      }}
+                      type="file"
+                    />
                     {uploadedProof ? (
                       <div className="flex items-center gap-2 text-[#088d27] font-bold text-xs">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-5 h-5">
@@ -697,7 +710,7 @@ export function AgentUpdateChecklist({
                         <span className="text-[9px] text-slate-400">JPG, PNG, PDF up to 5MB</span>
                       </>
                     )}
-                  </div>
+                  </label>
                   {proofError ? <p className="m-0 text-[10px] font-bold text-[#ee0f1a]">{proofError}</p> : null}
                 </div>
               </div>
