@@ -8,6 +8,7 @@ import {
   type CapturedAsset,
 } from "../utils/media";
 import { completeActiveAgentTask, getActiveAgentTask } from "../utils/tasks";
+import { generateTaskPdf } from "../utils/pdfGenerator";
 
 interface AgentUpdateChecklistProps {
   onBack: () => void;
@@ -36,6 +37,7 @@ export function AgentUpdateChecklist({
   const [photoCount] = useState(() => loadCapturedAssets(task.id, "photo").length);
   const [documentCount] = useState(() => loadCapturedAssets(task.id, "document").length);
   const [signatureCount] = useState(() => loadCapturedAssets(task.id, "signature").length);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
 
   // Questionnaire state variables
@@ -249,7 +251,7 @@ export function AgentUpdateChecklist({
       onBack();
     } else {
       completeActiveAgentTask();
-      onNavigate?.("history");
+      setShowSuccessModal(true);
     }
   };
 
@@ -734,6 +736,50 @@ export function AgentUpdateChecklist({
         </footer>
 
       </div>
+
+      {/* Success Modal Overlay */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-5">
+          <div className="bg-white rounded-3xl p-6 w-full max-w-sm border border-[#eef2f6] shadow-2xl text-center flex flex-col items-center gap-4 animate-scale-in">
+            {/* Animated checkmark container */}
+            <div className="w-16 h-16 rounded-full bg-[#ecfaef] border-2 border-[#088d27] flex items-center justify-center text-[#088d27] mt-2 animate-bounce">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-8 h-8">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            </div>
+
+            <h2 className="text-base font-extrabold text-[#07183f] mt-1">Task Submitted Successfully</h2>
+            <p className="text-xs text-slate-500 leading-relaxed max-w-[280px]">
+              All checklist evidence, coordinates, and signatures have been secured and geotagged.
+            </p>
+
+            {/* Buttons */}
+            <div className="flex flex-col gap-2 w-full mt-4">
+              <button
+                onClick={() => generateTaskPdf(task)}
+                type="button"
+                className="w-full bg-[#1158d4] text-white hover:bg-[#0f4ebc] active:scale-[0.99] h-11 rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer shadow-md border-0"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4 text-white">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                </svg>
+                Download PDF Report
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowSuccessModal(false);
+                  onNavigate?.("history");
+                }}
+                type="button"
+                className="w-full border border-slate-200 text-[#07183f] hover:bg-slate-50 active:scale-[0.99] h-11 rounded-xl text-xs font-bold flex items-center justify-center cursor-pointer bg-white"
+              >
+                Return to History
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

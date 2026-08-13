@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { Step } from "../../../types";
 import { loadAgentTasks, setActiveAgentTaskId, type AgentTaskRecord } from "../utils/tasks";
+import { generateTaskPdf, generateCombinedReport } from "../utils/pdfGenerator";
 
 interface HistoryTask {
   id: string;
@@ -270,6 +271,25 @@ export function AgentHistory({ onNavigate }: AgentHistoryProps) {
           </div>
           
           <button
+            onClick={() => {
+              // Convert HistoryTask back to AgentTaskRecord using loadAgentTasks() match
+              const allTasks = loadAgentTasks();
+              const tasksToExport = allTasks.filter(t => 
+                filteredTasks.some(ft => ft.taskId === t.id)
+              );
+              generateCombinedReport(tasksToExport);
+            }}
+            type="button"
+            className="flex items-center justify-center gap-1.5 h-10 w-10 min-[360px]:w-auto min-[360px]:px-4 border border-[#1158d4] rounded-[12px] bg-[#edf4ff] text-xs font-bold text-[#1158d4] cursor-pointer shadow-sm hover:bg-[#dce9ff] flex-none"
+            title="Download Combined Report"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+            </svg>
+            <span className="hidden min-[360px]:inline">Export Summary</span>
+          </button>
+
+          <button
             onClick={() => setShowFilters((current) => !current)}
             type="button"
             aria-label="Filter history"
@@ -372,6 +392,26 @@ export function AgentHistory({ onNavigate }: AgentHistoryProps) {
                         <span className="truncate">{task.timeRange}</span>
                       </div>
                     </div>
+
+                    {task.status === "COMPLETED" && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const allTasks = loadAgentTasks();
+                          const targetTask = allTasks.find(t => t.id === task.taskId);
+                          if (targetTask) {
+                            generateTaskPdf(targetTask);
+                          }
+                        }}
+                        type="button"
+                        aria-label="Download Report"
+                        className="absolute right-9 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full border border-slate-200 bg-[#f8fafc] text-[#1158d4] hover:bg-[#edf4ff] hover:border-[#1158d4] flex items-center justify-center cursor-pointer shadow-sm z-10"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                        </svg>
+                      </button>
+                    )}
 
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400">
                       <path d="m9 5 7 7-7 7" />
