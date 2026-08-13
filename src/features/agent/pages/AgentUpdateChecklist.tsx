@@ -96,6 +96,16 @@ export function AgentUpdateChecklist({
     return "webm";
   };
 
+  const shouldUseVoiceFileCapture = () => {
+    const userAgent = navigator.userAgent;
+    return (
+      !window.isSecureContext ||
+      "ReactNativeWebView" in window ||
+      /\bwv\b/i.test(userAgent) ||
+      /Version\/[\d.]+.*Chrome\/.*Mobile Safari/i.test(userAgent)
+    );
+  };
+
   const finishVoiceRecording = async (mimeType: string) => {
     const blob = new Blob(audioChunksRef.current, { type: mimeType || "audio/webm" });
     const duration = Math.max(Math.round((Date.now() - recordingStartedAtRef.current) / 1000), 1);
@@ -133,14 +143,15 @@ export function AgentUpdateChecklist({
     setIsPlayingVoice(false);
     audioRef.current?.pause();
 
-    if (!window.isSecureContext) {
-      setVoiceError("Microphone recording needs HTTPS. Use the fallback audio upload on this local dev build.");
+    if (shouldUseVoiceFileCapture()) {
+      setVoiceError("");
       voiceInputRef.current?.click();
       return;
     }
 
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      setVoiceError("Voice recording is not supported on this device.");
+      setVoiceError("Voice recording is not supported on this device. Use voice file upload.");
+      voiceInputRef.current?.click();
       return;
     }
 
@@ -165,7 +176,8 @@ export function AgentUpdateChecklist({
     } catch {
       stopVoiceStream();
       setIsRecording(false);
-      setVoiceError("Microphone permission denied or unavailable.");
+      setVoiceError("Microphone permission was denied. Use voice file upload.");
+      voiceInputRef.current?.click();
     } finally {
       setIsStartingRecording(false);
     }

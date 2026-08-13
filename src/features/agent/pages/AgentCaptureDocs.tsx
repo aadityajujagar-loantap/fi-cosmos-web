@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import type { Step } from "../../../types";
 import { addCapturedAsset, deleteCapturedAsset, loadCapturedAssets, type CapturedAsset } from "../utils/media";
 import { getActiveAgentTask } from "../utils/tasks";
@@ -14,8 +14,8 @@ interface DocumentSlotProps extends DocumentSlotConfig {
   assets: CapturedAsset[];
   expanded: boolean;
   onDelete: (assetId: string) => void;
-  onPickCamera: () => void;
-  onPickFile: () => void;
+  onCameraFiles: (files: FileList | null) => void;
+  onUploadFiles: (files: FileList | null) => void;
   onToggleExpand: () => void;
 }
 
@@ -84,10 +84,10 @@ function DocumentPreview({ asset, onDelete }: { asset: CapturedAsset; onDelete: 
 function DocumentSlot({
   assets,
   expanded,
+  onCameraFiles,
   onDelete,
-  onPickCamera,
-  onPickFile,
   onToggleExpand,
+  onUploadFiles,
   required,
   subtitle,
   title,
@@ -132,36 +132,51 @@ function DocumentSlot({
               {assets.map((asset) => (
                 <DocumentPreview key={asset.id} asset={asset} onDelete={() => onDelete(asset.id)} />
               ))}
-              <button
-                onClick={onPickCamera}
-                type="button"
-                className="flex aspect-[4/3] flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-[#cbdbe5] bg-[#f8fafc] text-[#1158d4] hover:bg-slate-50"
+              <label
+                className="flex aspect-[4/3] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-[#cbdbe5] bg-[#f8fafc] text-[#1158d4] hover:bg-slate-50"
               >
+                <input
+                  accept="image/*"
+                  capture="environment"
+                  className="sr-only"
+                  onChange={(event) => onCameraFiles(event.currentTarget.files)}
+                  type="file"
+                />
                 <CameraIcon />
                 <span className="text-[10px] font-bold">Retake</span>
-              </button>
+              </label>
             </div>
           ) : null}
 
           <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={onPickCamera}
-              type="button"
-              className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-[#1158d4] text-xs font-bold text-white"
+            <label
+              className="flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-[#1158d4] text-xs font-bold text-white"
             >
+              <input
+                accept="image/*"
+                capture="environment"
+                className="sr-only"
+                onChange={(event) => onCameraFiles(event.currentTarget.files)}
+                type="file"
+              />
               <CameraIcon />
               Camera
-            </button>
-            <button
-              onClick={onPickFile}
-              type="button"
-              className="flex h-10 items-center justify-center gap-1.5 rounded-xl border border-[#d8e0eb] bg-white text-xs font-bold text-[#1158d4]"
+            </label>
+            <label
+              className="flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#d8e0eb] bg-white text-xs font-bold text-[#1158d4]"
             >
+              <input
+                accept="image/*,application/pdf"
+                className="sr-only"
+                multiple
+                onChange={(event) => onUploadFiles(event.currentTarget.files)}
+                type="file"
+              />
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="h-4 w-4" aria-hidden="true">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
               </svg>
               Upload
-            </button>
+            </label>
           </div>
         </div>
       ) : null}
@@ -190,24 +205,11 @@ export function AgentCaptureDocs({
   });
   const [documents, setDocuments] = useState<CapturedAsset[]>(() => loadCapturedAssets(task.id, "document"));
   const [error, setError] = useState("");
-  const activeSlotRef = useRef(documentSlots[0].id);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const uploadInputRef = useRef<HTMLInputElement>(null);
 
   const reloadDocuments = () => setDocuments(loadCapturedAssets(task.id, "document"));
   const assetsForSlot = (slotId: string) => documents.filter((asset) => asset.slot === slotId);
 
-  const openCamera = (slotId: string) => {
-    activeSlotRef.current = slotId;
-    cameraInputRef.current?.click();
-  };
-
-  const openUpload = (slotId: string) => {
-    activeSlotRef.current = slotId;
-    uploadInputRef.current?.click();
-  };
-
-  const saveFiles = async (fileList: FileList | null) => {
+  const saveFiles = async (slotId: string, fileList: FileList | null) => {
     if (!fileList?.length) return;
 
     setError("");
@@ -215,16 +217,13 @@ export function AgentCaptureDocs({
       for (const file of Array.from(fileList)) {
         await addCapturedAsset(file, {
           kind: "document",
-          slot: activeSlotRef.current,
+          slot: slotId,
           taskId: task.id,
         });
       }
       reloadDocuments();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save document.");
-    } finally {
-      if (cameraInputRef.current) cameraInputRef.current.value = "";
-      if (uploadInputRef.current) uploadInputRef.current.value = "";
     }
   };
 
@@ -268,23 +267,6 @@ export function AgentCaptureDocs({
           <h1 className="max-w-[240px] truncate text-lg font-bold text-[#07183f]">Capture Documents</h1>
         </header>
 
-        <input
-          ref={cameraInputRef}
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          onChange={(event) => void saveFiles(event.target.files)}
-          type="file"
-        />
-        <input
-          ref={uploadInputRef}
-          accept="image/*,application/pdf"
-          className="hidden"
-          multiple
-          onChange={(event) => void saveFiles(event.target.files)}
-          type="file"
-        />
-
         <div className="mt-2 flex min-h-0 w-full flex-1 flex-col gap-4 overflow-y-auto pb-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <div className="flex w-full flex-none items-start gap-2.5 rounded-xl border border-[#d8e6ff] bg-[#f4f8ff] p-3 text-left">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="mt-0.5 h-5 w-5 flex-none text-[#1158d4]" aria-hidden="true">
@@ -304,8 +286,8 @@ export function AgentCaptureDocs({
               assets={assetsForSlot(slot.id)}
               expanded={expanded[slot.id]}
               onDelete={removeDocument}
-              onPickCamera={() => openCamera(slot.id)}
-              onPickFile={() => openUpload(slot.id)}
+              onCameraFiles={(files) => void saveFiles(slot.id, files)}
+              onUploadFiles={(files) => void saveFiles(slot.id, files)}
               onToggleExpand={() => setExpanded((current) => ({ ...current, [slot.id]: !current[slot.id] }))}
             />
           ))}

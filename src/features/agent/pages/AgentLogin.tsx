@@ -84,7 +84,7 @@ export function AgentLogin({ onSendOtp }: AgentLoginProps) {
 
   return (
     <section className="relative flex flex-col flex-1 bg-gradient-to-b from-white via-white via-[80%] to-[#eef8ff] min-h-screen h-[100dvh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] animate-fade-in">
-      <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-8 py-6 justify-between items-center relative min-h-screen">
+      <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-6 py-6 justify-between items-center relative min-h-screen">
         {/* Top Section (Language & Brand Header) */}
         <div className="w-full flex flex-col items-center flex-none relative z-20">
           {/* Language Button */}
