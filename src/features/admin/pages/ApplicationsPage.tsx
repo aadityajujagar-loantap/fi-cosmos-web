@@ -127,7 +127,7 @@ export function ApplicationsPage() {
             ))}
           </select>
         </div>
-        <div className="flex gap-2 overflow-x-auto border-b border-[#edf1f7] px-4 py-3">
+        <div className="flex flex-wrap gap-2 border-b border-[#edf1f7] px-4 py-3">
           {statusTabs.map((item) => (
             <button
               key={item}
@@ -141,30 +141,25 @@ export function ApplicationsPage() {
           ))}
         </div>
         {visibleCases.length ? (
-          <div className="admin-scrollbar overflow-x-auto">
-            <table className="min-w-[1260px] w-full table-fixed text-left text-sm">
+          <div className="overflow-hidden">
+            <table className="w-full table-fixed text-left text-sm">
               <thead className="bg-[#f8fafd] text-[11px] font-bold uppercase tracking-[0.04em] text-[#62728b]">
                 <tr>
-                  <th className="w-12 px-5 py-3">
+                  <th className="w-10 px-3 py-3">
                     <input checked={allPageSelected} onChange={toggleAllVisible} type="checkbox" aria-label="Select visible applications" />
                   </th>
-                  <th className="w-32 px-3 py-3"><button onClick={() => changeSort("id")} type="button">Case ID {sortLabel("id")}</button></th>
-                  <th className="w-48 px-3 py-3"><button onClick={() => changeSort("customer")} type="button">Customer {sortLabel("customer")}</button></th>
-                  <th className="w-32 px-3 py-3">Loan</th>
-                  <th className="w-32 px-3 py-3 text-right"><button onClick={() => changeSort("amount")} type="button">Amount {sortLabel("amount")}</button></th>
-                  <th className="w-36 px-3 py-3"><button onClick={() => changeSort("branch")} type="button">Branch {sortLabel("branch")}</button></th>
-                  <th className="w-44 px-3 py-3">Type</th>
-                  <th className="w-40 px-3 py-3">Agent</th>
-                  <th className="w-28 px-3 py-3"><button onClick={() => changeSort("priority")} type="button">Priority {sortLabel("priority")}</button></th>
-                  <th className="w-32 px-3 py-3"><button onClick={() => changeSort("status")} type="button">Status {sortLabel("status")}</button></th>
-                  <th className="w-28 px-3 py-3">SLA</th>
-                  <th className="w-20 px-3 py-3 text-center">AI</th>
+                  <th className="w-[18%] px-3 py-3"><button onClick={() => changeSort("id")} type="button">Case / Loan {sortLabel("id")}</button></th>
+                  <th className="w-[20%] px-3 py-3"><button onClick={() => changeSort("customer")} type="button">Customer {sortLabel("customer")}</button></th>
+                  <th className="w-[19%] px-3 py-3"><button onClick={() => changeSort("branch")} type="button">Branch / Agent {sortLabel("branch")}</button></th>
+                  <th className="w-[14%] px-3 py-3 text-right"><button onClick={() => changeSort("amount")} type="button">Amount / SLA {sortLabel("amount")}</button></th>
+                  <th className="w-[15%] px-3 py-3"><button onClick={() => changeSort("status")} type="button">Status {sortLabel("status")}</button></th>
+                  <th className="w-[72px] px-3 py-3 text-center">AI</th>
                 </tr>
               </thead>
               <tbody>
                 {pageCases.map((item) => (
                   <tr key={item.id} className={classNames("border-t border-[#edf1f7] transition hover:bg-[#f8fafd]", selectedIds.includes(item.id) && "bg-[#f3f7ff]")}>
-                    <td className="px-5 py-4">
+                    <td className="px-3 py-4">
                       <input
                         checked={selectedIds.includes(item.id)}
                         onChange={() => setSelectedIds((current) => (current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id]))}
@@ -172,29 +167,33 @@ export function ApplicationsPage() {
                         aria-label={`Select ${item.id}`}
                       />
                     </td>
-                    <td className="px-3 py-4 font-bold text-[#1454c8]">{item.id}</td>
-                    <td className="px-3 py-4">
+                    <td className="min-w-0 px-3 py-4">
+                      <p className="truncate font-bold text-[#1454c8]">{item.id}</p>
+                      <p className="mt-1 truncate text-xs font-semibold text-[#4b6384]">{item.loan}</p>
+                      <p className="mt-0.5 truncate text-xs text-[#7b8faa]">{item.type}</p>
+                    </td>
+                    <td className="min-w-0 px-3 py-4">
                       <p className="truncate font-bold text-[#07183f]">{item.customer}</p>
-                      <p className="mt-0.5 text-xs text-[#62728b]">{item.phone}</p>
+                      <p className="mt-0.5 truncate text-xs text-[#62728b]">{item.phone}</p>
                     </td>
-                    <td className="px-3 py-4 text-[#4b6384]">{item.loan}</td>
-                    <td className="px-3 py-4 text-right font-bold text-[#07183f]">{item.amount}</td>
-                    <td className="px-3 py-4 text-[#4b6384]">
-                      {item.branch}
-                      <p className="text-xs text-[#7b8faa]">{item.region}</p>
+                    <td className="min-w-0 px-3 py-4 text-[#4b6384]">
+                      <p className="truncate font-semibold">{item.branch}</p>
+                      <p className="truncate text-xs text-[#7b8faa]">{item.region}</p>
+                      <p className="mt-2 flex min-w-0 items-center gap-2 font-medium text-[#07183f]">
+                        <span className="inline-grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#edf3ff] text-[11px] font-bold text-[#1454c8]">{initials(item.agent)}</span>
+                        <span className="min-w-0 truncate">{item.agent}</span>
+                      </p>
                     </td>
-                    <td className="px-3 py-4 text-[#4b6384]">{item.type}</td>
-                    <td className="px-3 py-4 font-medium text-[#07183f]">
-                      <span className="mr-2 inline-grid h-8 w-8 place-items-center rounded-full bg-[#edf3ff] text-xs font-bold text-[#1454c8]">{initials(item.agent)}</span>
-                      {item.agent}
-                    </td>
-                    <td className="px-3 py-4">
-                      <PriorityPill priority={item.priority} />
+                    <td className="min-w-0 px-3 py-4 text-right">
+                      <p className="truncate font-bold text-[#07183f]">{item.amount}</p>
+                      <p className="mt-1 truncate text-xs font-bold text-[#b77900]">{item.sla}</p>
                     </td>
                     <td className="px-3 py-4">
-                      <StatusPill status={item.status} />
+                      <div className="flex min-w-0 flex-col items-start gap-2 overflow-hidden">
+                        <PriorityPill priority={item.priority} />
+                        <StatusPill status={item.status} />
+                      </div>
                     </td>
-                    <td className="px-3 py-4 text-xs font-bold text-[#b77900]">{item.sla}</td>
                     <td className="px-3 py-4">
                       <div className="flex justify-center">
                         <ScoreRing score={item.aiScore} />
@@ -219,11 +218,11 @@ export function ApplicationsPage() {
             />
           </div>
         )}
-        <footer className="flex items-center justify-between border-t border-[#edf1f7] px-4 py-3 text-xs font-semibold text-[#62728b]">
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#edf1f7] px-4 py-3 text-xs font-semibold text-[#62728b]">
           <span>
             Showing {resultStart}-{resultEnd} of {visibleCases.length} applications
           </span>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <span>{selectedIds.length} selected</span>
             <button onClick={() => setPage((value) => Math.max(1, value - 1))} disabled={currentPage === 1} type="button" className="rounded-lg border border-[#d8e3f5] px-3 py-1 disabled:opacity-50">Prev</button>
             <span>Page {currentPage} / {totalPages}</span>

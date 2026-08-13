@@ -9,7 +9,7 @@ export function StatusPill({ status }: { status: CaseStatus }) {
     Rejected: "bg-[#fff0ef] text-[#ee0f1a]",
   };
 
-  return <span className={classNames("inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold", styles[status])}>{status}</span>;
+  return <span className={classNames("inline-flex max-w-full items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold", styles[status])}>{status}</span>;
 }
 
 export function PriorityPill({ priority }: { priority: Priority }) {
@@ -19,5 +19,5 @@ export function PriorityPill({ priority }: { priority: Priority }) {
     Medium: "bg-[#fff8eb] text-[#b77900]",
   };
 
-  return <span className={classNames("inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold", styles[priority])}>{priority}</span>;
+  return <span className={classNames("inline-flex max-w-full items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-bold", styles[priority])}>{priority}</span>;
 }
