@@ -27,6 +27,7 @@ function priorityClass(priority: string) {
 export function AgentLocationMap({ onBack, onNavigate }: AgentLocationMapProps) {
   const [activeFilter, setActiveFilter] = useState<MapFilter>("All");
   const [tasks] = useState<AgentTaskRecord[]>(() => loadAgentTasks());
+  const [draggedLocations, setDraggedLocations] = useState<Record<string, LatLng>>({});
   const activeTasks = useMemo(() => tasks.filter((task) => !isTerminalStatus(task.status)), [tasks]);
   const [selectedTaskId, setSelectedTaskId] = useState(() => activeTasks[0]?.id || tasks[0]?.id || "");
   const [showLocationPrompt, setShowLocationPrompt] = useState(() => localStorage.getItem("agent-location-prompt-seen") !== "true");
@@ -41,6 +42,7 @@ export function AgentLocationMap({ onBack, onNavigate }: AgentLocationMapProps) 
   }, [activeFilter, activeTasks]);
 
   const selectedTask = filteredTasks.find((task) => task.id === selectedTaskId) || filteredTasks[0] || tasks[0];
+  const selectedLocation = selectedTask ? draggedLocations[selectedTask.id] || selectedTask : DEFAULT_USER_LOCATION;
 
   const requestLocation = () => {
     localStorage.setItem("agent-location-prompt-seen", "true");
@@ -75,7 +77,7 @@ export function AgentLocationMap({ onBack, onNavigate }: AgentLocationMapProps) 
 
   const openRoute = () => {
     if (!selectedTask) return;
-    window.open(routeUrl(selectedTask.latitude, selectedTask.longitude, userLocation || DEFAULT_USER_LOCATION), "_blank", "noopener,noreferrer");
+    window.open(routeUrl(selectedLocation.latitude, selectedLocation.longitude, userLocation || DEFAULT_USER_LOCATION), "_blank", "noopener,noreferrer");
   };
 
   const openTask = (task: AgentTaskRecord) => {
@@ -133,16 +135,25 @@ export function AgentLocationMap({ onBack, onNavigate }: AgentLocationMapProps) 
           <OpenStreetMap
             className="h-[310px] w-full"
             destinationLabel={selectedTask?.address}
+            draggableMarkerId={selectedTask?.id}
             latitude={selectedTask?.latitude || DEFAULT_USER_LOCATION.latitude}
             longitude={selectedTask?.longitude || DEFAULT_USER_LOCATION.longitude}
             markers={filteredTasks.map((task) => ({
               id: task.id,
               label: task.title,
-              latitude: task.latitude,
-              longitude: task.longitude,
+              latitude: draggedLocations[task.id]?.latitude || task.latitude,
+              longitude: draggedLocations[task.id]?.longitude || task.longitude,
               priority: task.priority,
             }))}
             onMarkerClick={setSelectedTaskId}
+            onMarkerDrag={(id, location) => {
+              setSelectedTaskId(id);
+              setDraggedLocations((current) => ({ ...current, [id]: location }));
+            }}
+            onMarkerDragEnd={(id, location) => {
+              setSelectedTaskId(id);
+              setDraggedLocations((current) => ({ ...current, [id]: location }));
+            }}
             selectedMarkerId={selectedTask?.id}
             userLocation={userLocation || undefined}
             zoomSpan={0.22}
@@ -153,6 +164,9 @@ export function AgentLocationMap({ onBack, onNavigate }: AgentLocationMapProps) 
               <span className="mt-1 block max-w-[210px] truncate text-[10px] font-medium text-[#088d27]">{locationStatus}</span>
             </span>
             <button onClick={openRoute} type="button" className="h-9 rounded-xl bg-[#1158d4] px-4 text-xs font-bold text-white">Navigate</button>
+          </div>
+          <div className="absolute bottom-4 left-4 rounded-xl bg-white/95 px-3 py-2 text-[10px] font-bold text-[#07183f] shadow-sm">
+            Drag selected pin
           </div>
           <button onClick={requestLocation} type="button" className="absolute bottom-4 right-4 rounded-xl bg-white/95 px-3 py-2 text-[10px] font-bold text-[#1158d4] shadow-sm">
             Use my location

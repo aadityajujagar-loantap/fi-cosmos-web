@@ -38,6 +38,7 @@ export function AgentCapturePhoto({
   const [error, setError] = useState("");
   const [triggerFlashAnimation, setTriggerFlashAnimation] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement>(null);
+  const cameraFallbackInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -51,6 +52,12 @@ export function AgentCapturePhoto({
 
   const startInlineCamera = useCallback(async () => {
     setError("");
+
+    if (!window.isSecureContext) {
+      setCameraStatus("unsupported");
+      setError("Inline camera needs HTTPS. Use the fallback camera button on this local dev build.");
+      return;
+    }
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraStatus("unsupported");
@@ -109,6 +116,7 @@ export function AgentCapturePhoto({
     } finally {
       setIsSaving(false);
       if (uploadInputRef.current) uploadInputRef.current.value = "";
+      if (cameraFallbackInputRef.current) cameraFallbackInputRef.current.value = "";
     }
   };
 
@@ -215,6 +223,14 @@ export function AgentCapturePhoto({
         </header>
 
         <input
+          ref={cameraFallbackInputRef}
+          accept="image/*"
+          capture={cameraFacing}
+          className="hidden"
+          onChange={(event) => void saveUploadedFiles(event.target.files)}
+          type="file"
+        />
+        <input
           ref={uploadInputRef}
           accept="image/*"
           className="hidden"
@@ -254,17 +270,26 @@ export function AgentCapturePhoto({
                 <div className="relative z-10">
                   <p className="m-0 text-sm font-bold">{cameraMessage}</p>
                   <p className="m-0 mt-1 text-xs font-medium text-white/70">
-                    {cameraStatus === "starting" ? "Please allow camera access." : "Tap Start Camera or upload a photo."}
+                    {cameraStatus === "starting" ? "Please allow camera access." : "Use HTTPS for inline camera, or capture with fallback."}
                   </p>
                 </div>
                 {cameraStatus !== "starting" ? (
-                  <button
-                    onClick={() => void startInlineCamera()}
-                    type="button"
-                    className="relative z-10 h-9 rounded-xl border border-white/30 bg-white/15 px-4 text-xs font-bold text-white"
-                  >
-                    Start Camera
-                  </button>
+                  <div className="relative z-10 flex gap-2">
+                    <button
+                      onClick={() => void startInlineCamera()}
+                      type="button"
+                      className="h-9 rounded-xl border border-white/30 bg-white/15 px-3 text-xs font-bold text-white"
+                    >
+                      Start Inline
+                    </button>
+                    <button
+                      onClick={() => cameraFallbackInputRef.current?.click()}
+                      type="button"
+                      className="h-9 rounded-xl border border-white bg-white px-3 text-xs font-bold text-[#1158d4]"
+                    >
+                      Open Camera
+                    </button>
+                  </div>
                 ) : null}
               </div>
             ) : null}
@@ -347,11 +372,17 @@ export function AgentCapturePhoto({
 
         <footer className="flex flex-none items-center gap-3 border-t border-[#eef2f6] bg-white pt-3">
           <button
-            onClick={() => void startInlineCamera()}
+            onClick={() => {
+              if (window.isSecureContext) {
+                void startInlineCamera();
+              } else {
+                cameraFallbackInputRef.current?.click();
+              }
+            }}
             type="button"
             className="flex h-12 flex-1 cursor-pointer items-center justify-center rounded-[14px] border border-[#1158d4] bg-white text-sm font-bold text-[#1158d4] shadow-sm hover:bg-slate-50"
           >
-            Restart
+            {window.isSecureContext ? "Restart" : "Camera"}
           </button>
           <button
             onClick={handleUsePhoto}

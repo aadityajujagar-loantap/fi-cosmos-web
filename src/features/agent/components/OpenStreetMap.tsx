@@ -1,6 +1,9 @@
+import { useRef, useState, type PointerEvent } from "react";
+
 interface OpenStreetMapProps {
   className?: string;
   destinationLabel?: string;
+  draggableMarkerId?: string;
   latitude?: number;
   longitude?: number;
   markers?: Array<{
@@ -11,6 +14,8 @@ interface OpenStreetMapProps {
     priority?: "HIGH" | "MEDIUM" | "LOW";
   }>;
   onMarkerClick?: (id: string) => void;
+  onMarkerDrag?: (id: string, location: { latitude: number; longitude: number }) => void;
+  onMarkerDragEnd?: (id: string, location: { latitude: number; longitude: number }) => void;
   selectedMarkerId?: string;
   userLocation?: { latitude: number; longitude: number };
   zoomSpan?: number;
@@ -35,14 +40,19 @@ function latToTileY(latitude: number, zoom: number) {
 export function OpenStreetMap({
   className = "",
   destinationLabel = "102, Sai Residency, Baner Road",
+  draggableMarkerId,
   latitude = DEFAULT_LAT,
   longitude = DEFAULT_LNG,
   markers = [],
   onMarkerClick,
+  onMarkerDrag,
+  onMarkerDragEnd,
   selectedMarkerId,
   userLocation,
   zoomSpan = 0.018,
 }: OpenStreetMapProps) {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const [draggingMarkerId, setDraggingMarkerId] = useState<string | null>(null);
   const centerX = lonToTileX(longitude, TILE_ZOOM);
   const centerY = latToTileY(latitude, TILE_ZOOM);
   const north = latitude + zoomSpan / 2;
@@ -65,6 +75,26 @@ export function OpenStreetMap({
     top: `${Math.min(88, Math.max(12, ((north - markerLatitude) / (north - south)) * 100))}%`,
   });
 
+  const pointerLocation = (event: PointerEvent) => {
+    const rect = mapRef.current?.getBoundingClientRect();
+    if (!rect) return null;
+
+    const x = Math.min(rect.width, Math.max(0, event.clientX - rect.left));
+    const y = Math.min(rect.height, Math.max(0, event.clientY - rect.top));
+
+    return {
+      latitude: north - (y / rect.height) * (north - south),
+      longitude: west + (x / rect.width) * (east - west),
+    };
+  };
+
+  const updateDraggedMarker = (event: PointerEvent, markerId: string, final = false) => {
+    const location = pointerLocation(event);
+    if (!location) return;
+    if (final) onMarkerDragEnd?.(markerId, location);
+    else onMarkerDrag?.(markerId, location);
+  };
+
   const markerClass = (priority?: "HIGH" | "MEDIUM" | "LOW") => {
     if (priority === "LOW") return "bg-[#088d27]";
     if (priority === "MEDIUM") return "bg-[#e58000]";
@@ -73,9 +103,20 @@ export function OpenStreetMap({
 
   return (
     <div
+      ref={mapRef}
       className={`relative overflow-hidden bg-[#dfeaf6] ${className}`}
       aria-label={`OpenStreetMap route near ${destinationLabel}`}
-      role="img"
+      onPointerMove={(event) => {
+        if (!draggingMarkerId) return;
+        updateDraggedMarker(event, draggingMarkerId);
+      }}
+      onPointerUp={(event) => {
+        if (!draggingMarkerId) return;
+        updateDraggedMarker(event, draggingMarkerId, true);
+        setDraggingMarkerId(null);
+      }}
+      onPointerCancel={() => setDraggingMarkerId(null)}
+      role={draggableMarkerId ? "application" : "img"}
     >
       <div className="absolute inset-0 bg-[linear-gradient(42deg,transparent_46%,rgba(255,255,255,0.92)_47%,rgba(255,255,255,0.92)_53%,transparent_54%),linear-gradient(128deg,transparent_44%,rgba(255,255,255,0.86)_45%,rgba(255,255,255,0.86)_53%,transparent_54%),linear-gradient(90deg,rgba(17,88,212,0.09)_1px,transparent_1px),linear-gradient(0deg,rgba(17,88,212,0.09)_1px,transparent_1px)] bg-[length:100%_100%,100%_100%,48px_48px,48px_48px]" />
       <div
@@ -106,8 +147,18 @@ export function OpenStreetMap({
           <button
             key={marker.id}
             onClick={() => onMarkerClick?.(marker.id)}
+            onPointerDown={(event) => {
+              if (draggableMarkerId !== marker.id) return;
+              event.preventDefault();
+              event.currentTarget.setPointerCapture(event.pointerId);
+              setDraggingMarkerId(marker.id);
+              onMarkerClick?.(marker.id);
+              updateDraggedMarker(event, marker.id);
+            }}
             type="button"
-            className="absolute z-20 -translate-x-1/2 -translate-y-1/2 cursor-pointer border-0 bg-transparent p-0 text-left"
+            className={`absolute z-20 -translate-x-1/2 -translate-y-1/2 border-0 bg-transparent p-0 text-left ${
+              draggableMarkerId === marker.id ? "cursor-grab touch-none active:cursor-grabbing" : "cursor-pointer"
+            }`}
             style={position}
             aria-label={`Select ${marker.label}`}
           >
@@ -136,7 +187,7 @@ export function OpenStreetMap({
         OpenStreetMap tiles
       </div>
       <div className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-white/90 px-2.5 py-1 text-[9px] font-bold text-[#5c6a85] shadow-sm">
-        zoom {TILE_ZOOM} / span {zoomSpan.toFixed(3)}
+        {draggableMarkerId ? "drag pin to adjust" : `zoom ${TILE_ZOOM} / span ${zoomSpan.toFixed(3)}`}
       </div>
     </div>
   );

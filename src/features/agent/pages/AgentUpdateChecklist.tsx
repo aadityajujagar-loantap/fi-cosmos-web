@@ -37,6 +37,7 @@ export function AgentUpdateChecklist({
   const [documentCount] = useState(() => loadCapturedAssets(task.id, "document").length);
   const [signatureCount] = useState(() => loadCapturedAssets(task.id, "signature").length);
   const proofInputRef = useRef<HTMLInputElement>(null);
+  const voiceInputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioStreamRef = useRef<MediaStream | null>(null);
@@ -132,6 +133,12 @@ export function AgentUpdateChecklist({
     setIsPlayingVoice(false);
     audioRef.current?.pause();
 
+    if (!window.isSecureContext) {
+      setVoiceError("Microphone recording needs HTTPS. Use the fallback audio upload on this local dev build.");
+      voiceInputRef.current?.click();
+      return;
+    }
+
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setVoiceError("Voice recording is not supported on this device.");
       return;
@@ -161,6 +168,25 @@ export function AgentUpdateChecklist({
       setVoiceError("Microphone permission denied or unavailable.");
     } finally {
       setIsStartingRecording(false);
+    }
+  };
+
+  const handleVoiceFile = async (fileList: FileList | null) => {
+    const file = fileList?.[0];
+    if (!file) return;
+
+    setVoiceError("");
+    try {
+      const asset = await addCapturedAsset(file, { kind: "voice", slot: "voice-remarks", taskId: task.id });
+      setVoiceFile(asset);
+      setStep3Completed(true);
+      if (setCompletedStepsCount && completedStepsCount < 3) {
+        setCompletedStepsCount(3);
+      }
+    } catch (err) {
+      setVoiceError(err instanceof Error ? err.message : "Unable to save voice remarks.");
+    } finally {
+      if (voiceInputRef.current) voiceInputRef.current.value = "";
     }
   };
 
@@ -289,6 +315,14 @@ export function AgentUpdateChecklist({
         </header>
 
         {/* Scrollable Checklist */}
+        <input
+          ref={voiceInputRef}
+          accept="audio/*"
+          capture
+          className="hidden"
+          onChange={(event) => void handleVoiceFile(event.target.files)}
+          type="file"
+        />
         <input
           ref={proofInputRef}
           accept="image/*,application/pdf"
@@ -596,6 +630,18 @@ export function AgentUpdateChecklist({
                       <span>{isStartingRecording ? "Opening Microphone..." : "Record Voice Remarks"}</span>
                     </button>
                   )}
+                  {!isRecording ? (
+                    <button
+                      onClick={() => voiceInputRef.current?.click()}
+                      type="button"
+                      className="border border-[#d8e0eb] rounded-xl py-2 px-3 bg-white flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 text-xs font-bold text-[#5c6a85] outline-none"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4 text-[#1158d4]">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+                      </svg>
+                      <span>Upload Voice File</span>
+                    </button>
+                  ) : null}
                   {voiceError ? <p className="m-0 text-[10px] font-bold text-[#ee0f1a]">{voiceError}</p> : null}
                 </div>
 
