@@ -2,6 +2,29 @@ import { jsPDF } from "jspdf";
 import type { AgentTaskRecord } from "./tasks";
 import { loadCapturedAssets } from "./media";
 
+// Android-safe PDF download: uses blob URL + anchor click.
+// Falls back to window.open(dataURI) which works in all Android browsers / WebViews.
+function downloadPdf(doc: jsPDF, filename: string) {
+  try {
+    const blob = doc.output("blob");
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
+    anchor.click();
+    setTimeout(() => {
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+    }, 2000);
+  } catch {
+    // Fallback: open data URI in a new tab — works in Android Chrome and Expo WebView
+    const dataUri = doc.output("datauristring");
+    window.open(dataUri, "_blank");
+  }
+}
+
 // A small, clean base64 string for a static QR code image to place on reports
 const MOCK_QR_CODE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH5QgKCg0SDm19pgAAA0JJREFUeNrtm8lS3DAQhv+xpSznApxzcs45J5cKODkHZTkXHqDsKst5AMRyLpBzcc45KacKODkH5+Scc5bVluTUA8yOpJGlkTRi25XqUkuyNBL99etue/oH9T911AMg1+v9VwAcgCMADeABwAGYV4FfARwCuAIwBnAK4BzABMAlgA327vL7rQA4AfC/ADxWwK8V8EsFvFfADQA3AJ4APEZ+3gB4rMofqLIzVT7X5XfU/oP2/z3AfBHA2T1/n/nZPX+X+Tzz0Z6/o/bbav/c/XkEsAFwhXw+q5B7yD3kBfIceWLPzyP/PPLPI/8c+TzyD5B/E/m7yDeRv4v8TeQZ8ox8pPbbav/c/XkI4ArAhfxPyp9UfP+k/EnF/0/Kn1T8/6T8ScX/T8qfVPz/pPyO2m+r/XP35wmAK+Qvyp9UvFD+osL9k/LnFS+Uvyi6f1F0/6Lo/kXR/Yui+6P222r/3P15C+AK+RPyxxUvlj+ueL78ccXz5Y8rXiifV/Q+i+5n0f0sup9F97Pofhbdz6L7WXR/1H5b7Z+7P58A3CB/RP6Q/CH5Q/KH5A/JHzpA/pD8odPkr09p2X0qf7/K37fy96/8/St/38rfv/L3rfw9an/Ufkf1PyMAd5DfL39f/r78ffn78vfl78vfl78vfl98vfr98vfr98vfr98vfr98vfr98vfr98vfn78vfl78vfl78vfl78vfl78vfl78vfl/+/rT8gV1O2f6r9t9W+w3qf1YA7pB/R/4d+Xfk35F/R/4d+Xfk35F/R/4d+Xfk35F/Wv6mQv3/T/0f1P+sANwh/5L8S/Ivyb8k/5L8S/Ivyb8k/5L8S/IvK/4A8h8p/kKx/2n52xT7n5a/TbH/afnbFPuflr9Nsf/V8nv4r+d31H5b7Z+7P98CuEH+K/lfyf9K/lfyv5L/lfz/tfw+K/51Ff++in9dxf+6in9dxf+6in9dxf+6it9W8VsqflvFb6v4bRW/reK3Vfy2it9W8Xep/dH5D+p/VgDukP9D/g/5P+T/kP9D/g/5P+T/kP9D/g/5P+T/kP9D/sCKP9/C/lrtj9rvqP4fGgB2kP9I/iP5j+Q/kv9I/iP5j+Q/kv9I/iP5j+Q/UvwD7JzS/1H7HdX/jwBgG/m/5P+S/0v+L/m/5P+S/0v+L/m/5P+S/0v+L8XfZef3aL/aH7XfUf0/NADsI39C/oT8CfkT8ifkT8ifkD8hf0L+hPwJ+RPyJ8TfZf4ePZej9tX+qP2O6n9GAPgD7+3/Y3u/9/b/ub3fa3u/5/Z+n9r7e2rv96i9n6f2fp3a+7W3/x/b+z2293ts7/fY3u/4/wHzXwEAdOOH3QAAAABJRU5CYII=";
 
@@ -308,8 +331,8 @@ export function generateTaskPdf(task: AgentTaskRecord) {
     doc.text("Page 2 of 2", pageWidth - margin, pageHeight - margin + 5, { align: "right" });
   }
 
-  // Download PDF
-  doc.save(`FI_Report_${task.id}.pdf`);
+  // Download PDF (Android-safe)
+  downloadPdf(doc, `FI_Report_${task.id}.pdf`);
 }
 
 export function generateCombinedReport(tasks: AgentTaskRecord[]) {
@@ -467,5 +490,5 @@ export function generateCombinedReport(tasks: AgentTaskRecord[]) {
   doc.text("Combined Operations Log. System Generated. Confidential.", margin, pageHeight - margin + 5);
   doc.text("Page 1 of 1", pageWidth - margin, pageHeight - margin + 5, { align: "right" });
 
-  doc.save("FI_Combined_Operations_Report.pdf");
+  downloadPdf(doc, "FI_Combined_Operations_Report.pdf");
 }
