@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Step } from "../../../types";
-import { addCapturedAsset, addCapturedBlob, deleteCapturedAsset, loadCapturedAssets, type CapturedAsset } from "../utils/media";
+import { addCapturedBlob, deleteCapturedAsset, loadCapturedAssets, type CapturedAsset } from "../utils/media";
 import { getActiveAgentTask } from "../utils/tasks";
 
 interface DocumentSlotConfig {
@@ -14,9 +14,8 @@ interface DocumentSlotProps extends DocumentSlotConfig {
   assets: CapturedAsset[];
   expanded: boolean;
   onDelete: (assetId: string) => void;
-  onCameraFiles: (files: FileList | null) => void;
-  onSampleDocument: () => void;
-  onUploadFiles: (files: FileList | null) => void;
+  onDummyCamera: () => void;
+  onDummyUpload: () => void;
   onToggleExpand: () => void;
 }
 
@@ -85,11 +84,10 @@ function DocumentPreview({ asset, onDelete }: { asset: CapturedAsset; onDelete: 
 function DocumentSlot({
   assets,
   expanded,
-  onCameraFiles,
   onDelete,
-  onSampleDocument,
+  onDummyCamera,
+  onDummyUpload,
   onToggleExpand,
-  onUploadFiles,
   required,
   subtitle,
   title,
@@ -134,57 +132,35 @@ function DocumentSlot({
               {assets.map((asset) => (
                 <DocumentPreview key={asset.id} asset={asset} onDelete={() => onDelete(asset.id)} />
               ))}
-              <label
-                className="relative flex aspect-[4/3] cursor-pointer flex-col items-center justify-center gap-1.5 overflow-hidden rounded-lg border-2 border-dashed border-[#cbdbe5] bg-[#f8fafc] text-[#1158d4] hover:bg-slate-50"
+              <button
+                onClick={onDummyCamera}
+                type="button"
+                className="flex aspect-[4/3] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed border-[#cbdbe5] bg-[#f8fafc] text-[#1158d4] hover:bg-slate-50"
               >
-                <input
-                  accept="image/*"
-                  capture="environment"
-                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                  onChange={(event) => onCameraFiles(event.currentTarget.files)}
-                  type="file"
-                />
                 <CameraIcon />
                 <span className="text-[10px] font-bold">Retake</span>
-              </label>
+              </button>
             </div>
           ) : null}
 
-          <div className="grid grid-cols-3 gap-2">
-            <label
-              className="relative flex h-10 cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-xl bg-[#1158d4] text-xs font-bold text-white"
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={onDummyCamera}
+              type="button"
+              className="flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-[#1158d4] text-xs font-bold text-white"
             >
-              <input
-                accept="image/*"
-                capture="environment"
-                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                onChange={(event) => onCameraFiles(event.currentTarget.files)}
-                type="file"
-              />
               <CameraIcon />
               Camera
-            </label>
-            <label
-              className="relative flex h-10 cursor-pointer items-center justify-center gap-1.5 overflow-hidden rounded-xl border border-[#d8e0eb] bg-white text-xs font-bold text-[#1158d4]"
+            </button>
+            <button
+              onClick={onDummyUpload}
+              type="button"
+              className="flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#d8e0eb] bg-white text-xs font-bold text-[#1158d4]"
             >
-              <input
-                accept="image/*,application/pdf"
-                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                multiple
-                onChange={(event) => onUploadFiles(event.currentTarget.files)}
-                type="file"
-              />
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="h-4 w-4" aria-hidden="true">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
               </svg>
               Upload
-            </label>
-            <button
-              onClick={onSampleDocument}
-              type="button"
-              className="flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#d8e0eb] bg-[#f8fafc] text-xs font-bold text-[#5c6a85]"
-            >
-              Sample
             </button>
           </div>
         </div>
@@ -218,27 +194,10 @@ export function AgentCaptureDocs({
   const reloadDocuments = () => setDocuments(loadCapturedAssets(task.id, "document"));
   const assetsForSlot = (slotId: string) => documents.filter((asset) => asset.slot === slotId);
 
-  const saveFiles = async (slotId: string, fileList: FileList | null) => {
-    if (!fileList?.length) return;
-
-    setError("");
-    try {
-      for (const file of Array.from(fileList)) {
-        await addCapturedAsset(file, {
-          kind: "document",
-          slot: slotId,
-          taskId: task.id,
-        });
-      }
-      reloadDocuments();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to save document.");
-    }
-  };
-
-  const saveSampleDocument = async (slot: DocumentSlotConfig) => {
+  const saveDummyDocument = async (slot: DocumentSlotConfig, source: "camera" | "upload") => {
     setError("");
     const createdAt = new Date().toLocaleString();
+    const sourceLabel = source === "camera" ? "Camera Capture" : "Uploaded Document";
     const svg = `
       <svg xmlns="http://www.w3.org/2000/svg" width="900" height="620" viewBox="0 0 900 620">
         <rect width="900" height="620" rx="28" fill="#f8fafc"/>
@@ -250,7 +209,7 @@ export function AgentCaptureDocs({
         <rect x="92" y="316" width="480" height="22" rx="8" fill="#e2e8f0"/>
         <rect x="92" y="402" width="300" height="84" rx="14" fill="#edf5ff" stroke="#1158d4" stroke-width="3"/>
         <text x="112" y="454" fill="#1158d4" font-family="Arial, sans-serif" font-size="34" font-weight="700">${slot.title}</text>
-        <text x="92" y="532" fill="#64748b" font-family="Arial, sans-serif" font-size="24">Sample document generated ${createdAt}</text>
+        <text x="92" y="532" fill="#64748b" font-family="Arial, sans-serif" font-size="24">Dummy ${sourceLabel} generated ${createdAt}</text>
       </svg>
     `;
 
@@ -258,7 +217,7 @@ export function AgentCaptureDocs({
       await addCapturedBlob(new Blob([svg], { type: "image/svg+xml" }), {
         kind: "document",
         mimeType: "image/svg+xml",
-        name: `${slot.id}-sample-document.svg`,
+        name: `${slot.id}-${source}-document.svg`,
         slot: slot.id,
         taskId: task.id,
       });
@@ -316,7 +275,7 @@ export function AgentCaptureDocs({
             </svg>
             <div className="min-w-0 text-xs text-[#1158d4]">
               <p className="m-0 font-bold">Please capture clear and readable documents.</p>
-              <p className="m-0 mt-0.5 font-medium">Camera capture and file upload are both supported.</p>
+              <p className="m-0 mt-0.5 font-medium">Use Camera or Upload to add document placeholders.</p>
             </div>
           </div>
 
@@ -327,9 +286,8 @@ export function AgentCaptureDocs({
               assets={assetsForSlot(slot.id)}
               expanded={expanded[slot.id]}
               onDelete={removeDocument}
-              onCameraFiles={(files) => void saveFiles(slot.id, files)}
-              onSampleDocument={() => void saveSampleDocument(slot)}
-              onUploadFiles={(files) => void saveFiles(slot.id, files)}
+              onDummyCamera={() => void saveDummyDocument(slot, "camera")}
+              onDummyUpload={() => void saveDummyDocument(slot, "upload")}
               onToggleExpand={() => setExpanded((current) => ({ ...current, [slot.id]: !current[slot.id] }))}
             />
           ))}
@@ -344,7 +302,7 @@ export function AgentCaptureDocs({
               <p className="m-0 font-bold">Note:</p>
               <ul className="m-0 mt-1 flex list-disc flex-col gap-1 pl-4 font-medium leading-snug">
                 <li>Ensure every document is clear and all details are visible.</li>
-                <li>Supported formats: JPG, PNG, PDF. Max 5MB each.</li>
+                <li>Identity and address proofs are required before continuing.</li>
               </ul>
             </div>
           </div>

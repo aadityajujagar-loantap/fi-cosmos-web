@@ -37,10 +37,6 @@ export function AgentUpdateChecklist({
   const [documentCount] = useState(() => loadCapturedAssets(task.id, "document").length);
   const [signatureCount] = useState(() => loadCapturedAssets(task.id, "signature").length);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const audioStreamRef = useRef<MediaStream | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const recordingStartedAtRef = useRef(0);
 
   // Questionnaire state variables
   const [residesVerified, setResidesVerified] = useState<string | null>(null);
@@ -49,7 +45,6 @@ export function AgentUpdateChecklist({
 
   // Voice recording state variables
   const [isRecording, setIsRecording] = useState(false);
-  const [isStartingRecording, setIsStartingRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [voiceFile, setVoiceFile] = useState<CapturedAsset | null>(initialVoiceFile);
   const [voiceError, setVoiceError] = useState("");
@@ -67,77 +62,13 @@ export function AgentUpdateChecklist({
     };
   }, [isRecording]);
 
-  useEffect(() => {
-    return () => {
-      const recorder = mediaRecorderRef.current;
-      if (recorder && recorder.state !== "inactive") {
-        recorder.onstop = null;
-        recorder.stop();
-      }
-      audioStreamRef.current?.getTracks().forEach((track) => track.stop());
-    };
-  }, []);
-
-  const stopVoiceStream = () => {
-    audioStreamRef.current?.getTracks().forEach((track) => track.stop());
-    audioStreamRef.current = null;
-  };
-
   const formatDuration = (seconds = 0) => {
     const safeSeconds = Math.max(0, Math.floor(seconds));
     return `${Math.floor(safeSeconds / 60)}:${String(safeSeconds % 60).padStart(2, "0")}`;
   };
 
-  const audioExtensionFor = (mimeType: string) => {
-    if (mimeType.includes("mp4") || mimeType.includes("aac")) return "m4a";
-    if (mimeType.includes("ogg")) return "ogg";
-    return "webm";
-  };
-
-  const shouldUseVoiceFileCapture = () => {
-    const userAgent = navigator.userAgent;
-    return (
-      !window.isSecureContext ||
-      "ReactNativeWebView" in window ||
-      /\bwv\b/i.test(userAgent) ||
-      /Version\/[\d.]+.*Chrome\/.*Mobile Safari/i.test(userAgent)
-    );
-  };
-
-  const finishVoiceRecording = async (mimeType: string) => {
-    const blob = new Blob(audioChunksRef.current, { type: mimeType || "audio/webm" });
-    const duration = Math.max(Math.round((Date.now() - recordingStartedAtRef.current) / 1000), 1);
-    stopVoiceStream();
-
-    if (!blob.size) {
-      setVoiceError("No voice data was captured.");
-      return;
-    }
-
-    try {
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-      const asset = await addCapturedBlob(blob, {
-        duration,
-        kind: "voice",
-        mimeType: mimeType || blob.type || "audio/webm",
-        name: `voice_remarks_${timestamp}.${audioExtensionFor(mimeType || blob.type)}`,
-        slot: "voice-remarks",
-        taskId: task.id,
-      });
-      setVoiceFile(asset);
-      setVoiceError("");
-      setStep3Completed(true);
-      if (setCompletedStepsCount && completedStepsCount < 3) {
-        setCompletedStepsCount(3);
-      }
-    } catch (err) {
-      setVoiceError(err instanceof Error ? err.message : "Unable to save voice remarks.");
-    }
-  };
-
-  const createSampleVoiceBlob = () => {
+  const createSampleVoiceBlob = (durationSeconds = 2) => {
     const sampleRate = 8000;
-    const durationSeconds = 2;
     const sampleCount = sampleRate * durationSeconds;
     const buffer = new ArrayBuffer(44 + sampleCount * 2);
     const view = new DataView(buffer);
@@ -170,18 +101,18 @@ export function AgentUpdateChecklist({
     return new Blob([buffer], { type: "audio/wav" });
   };
 
-  const handleSampleVoice = async () => {
+  const handleSampleVoice = async (durationSeconds = 2) => {
     setVoiceError("");
     setPlaybackProgress(0);
     setIsPlayingVoice(false);
     audioRef.current?.pause();
 
     try {
-      const asset = await addCapturedBlob(createSampleVoiceBlob(), {
-        duration: 2,
+      const asset = await addCapturedBlob(createSampleVoiceBlob(durationSeconds), {
+        duration: durationSeconds,
         kind: "voice",
         mimeType: "audio/wav",
-        name: `sample_voice_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.wav`,
+        name: `dummy_voice_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.wav`,
         slot: "voice-remarks",
         taskId: task.id,
       });
@@ -191,7 +122,7 @@ export function AgentUpdateChecklist({
         setCompletedStepsCount(3);
       }
     } catch (err) {
-      setVoiceError(err instanceof Error ? err.message : "Unable to save sample voice.");
+      setVoiceError(err instanceof Error ? err.message : "Unable to save dummy voice remark.");
     }
   };
 
@@ -228,76 +159,19 @@ export function AgentUpdateChecklist({
     }
   };
 
-  const handleStartRecord = async () => {
+  const handleStartRecord = () => {
     setVoiceError("");
     setPlaybackProgress(0);
     setIsPlayingVoice(false);
     audioRef.current?.pause();
-
-    if (shouldUseVoiceFileCapture()) {
-      setVoiceError("");
-      return;
-    }
-
-    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      setVoiceError("Voice recording is not supported on this device. Use voice file upload.");
-      return;
-    }
-
-    setIsStartingRecording(true);
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      audioChunksRef.current = [];
-      audioStreamRef.current = stream;
-      mediaRecorderRef.current = recorder;
-      recordingStartedAtRef.current = Date.now();
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) audioChunksRef.current.push(event.data);
-      };
-      recorder.onstop = () => {
-        void finishVoiceRecording(recorder.mimeType);
-      };
-      setRecordingSeconds(0);
-      setVoiceFile(null);
-      recorder.start();
-      setIsRecording(true);
-    } catch {
-      stopVoiceStream();
-      setIsRecording(false);
-      setVoiceError("Microphone permission was denied. Use voice file upload.");
-    } finally {
-      setIsStartingRecording(false);
-    }
-  };
-
-  const handleVoiceFile = async (fileList: FileList | null, resetInput?: () => void) => {
-    const file = fileList?.[0];
-    if (!file) return;
-
-    setVoiceError("");
-    try {
-      const asset = await addCapturedAsset(file, { kind: "voice", slot: "voice-remarks", taskId: task.id });
-      setVoiceFile(asset);
-      setStep3Completed(true);
-      if (setCompletedStepsCount && completedStepsCount < 3) {
-        setCompletedStepsCount(3);
-      }
-    } catch (err) {
-      setVoiceError(err instanceof Error ? err.message : "Unable to save voice remarks.");
-    } finally {
-      resetInput?.();
-    }
+    setVoiceFile(null);
+    setRecordingSeconds(0);
+    setIsRecording(true);
   };
 
   const handleStopRecord = () => {
-    const recorder = mediaRecorderRef.current;
     setIsRecording(false);
-    if (recorder && recorder.state !== "inactive") {
-      recorder.stop();
-    } else {
-      stopVoiceStream();
-    }
+    void handleSampleVoice(Math.max(recordingSeconds, 2));
   };
 
   const handleDeleteVoice = () => {
@@ -694,70 +568,19 @@ export function AgentUpdateChecklist({
                         </div>
                       </div>
                     </div>
-                  ) : shouldUseVoiceFileCapture() ? (
-                    <label className="relative border border-[#cbdbe5] rounded-xl py-2 px-3 bg-white flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 text-xs font-bold text-[#1158d4] outline-none overflow-hidden">
-                      <input
-                        accept="audio/*"
-                        capture
-                        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                        onChange={(event) => {
-                          const input = event.currentTarget;
-                          void handleVoiceFile(input.files, () => {
-                            input.value = "";
-                          });
-                        }}
-                        type="file"
-                      />
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4 text-[#1158d4]">
-                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                        <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8" />
-                      </svg>
-                      <span>Record Voice Remarks</span>
-                    </label>
                   ) : (
                     <button
-                      onClick={() => void handleStartRecord()}
+                      onClick={handleStartRecord}
                       type="button"
-                      disabled={isStartingRecording}
                       className="border border-[#cbdbe5] rounded-xl py-2 px-3 bg-white flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 text-xs font-bold text-[#1158d4] outline-none"
                     >
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4 text-[#1158d4]">
                         <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
                         <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8" />
                       </svg>
-                      <span>{isStartingRecording ? "Opening Microphone..." : "Record Voice Remarks"}</span>
+                      <span>Record Voice Remarks</span>
                     </button>
                   )}
-                  {!isRecording ? (
-                    <div className="grid grid-cols-2 gap-2">
-                      <label
-                        className="relative border border-[#d8e0eb] rounded-xl py-2 px-3 bg-white flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 text-xs font-bold text-[#5c6a85] outline-none overflow-hidden"
-                      >
-                        <input
-                          accept="audio/*"
-                          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                          onChange={(event) => {
-                            const input = event.currentTarget;
-                            void handleVoiceFile(input.files, () => {
-                              input.value = "";
-                            });
-                          }}
-                          type="file"
-                        />
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4 text-[#1158d4]">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
-                        </svg>
-                        <span>Upload Voice</span>
-                      </label>
-                      <button
-                        onClick={() => void handleSampleVoice()}
-                        type="button"
-                        className="border border-[#d8e0eb] rounded-xl py-2 px-3 bg-[#f8fafc] flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 text-xs font-bold text-[#5c6a85] outline-none"
-                      >
-                        Sample Voice
-                      </button>
-                    </div>
-                  ) : null}
                   {voiceError ? <p className="m-0 text-[10px] font-bold text-[#ee0f1a]">{voiceError}</p> : null}
                 </div>
 
