@@ -144,7 +144,7 @@ export function Header({ onLogout, onNavigate, route }: HeaderProps) {
             </div>
           ) : null}
         </div>
-        <AdminButton variant="primary" className="hidden xl:inline-flex" onClick={() => window.location.assign("/agent")}>
+        <AdminButton variant="primary" className="hidden xl:inline-flex" onClick={() => window.location.assign("https://expo.dev/accounts/adi_loantap/projects/fi-iflow/builds/4d946dff-1d37-4b3c-83e4-68c19d9fc03f")}>
           Agent App
         </AdminButton>
         <div className="relative" ref={profileRef}>
