@@ -51,7 +51,7 @@ export function AdminPlaceholder() {
           <div className="text-xs text-slate-300">
             <p className="font-bold text-white mb-0.5">Strict Path Segregation Enforced</p>
             <p className="text-[11px] text-slate-400 leading-snug">
-              Access control rules prevent cross-route rendering. Admin panels are strictly isolated from the mobile `/agent` viewports.
+              Access control rules prevent cross-route rendering. Admin panels are strictly isolated from the mobile agent viewports.
             </p>
           </div>
         </div>
@@ -82,13 +82,15 @@ export function AdminPlaceholder() {
         {/* Action Button to launch mobile view for ease of development */}
         <div className="flex flex-col gap-2 w-full mt-4">
           <a
-            href="/agent"
+            href="https://expo.dev/accounts/adi_loantap/projects/fi-iflow/builds/4d946dff-1d37-4b3c-83e4-68c19d9fc03f"
+            target="_blank"
+            rel="noopener noreferrer"
             className="w-full bg-[#1158d4] text-white hover:bg-[#0f4ebc] active:scale-[0.99] transition h-11 rounded-xl text-xs font-bold flex items-center justify-center shadow-lg shadow-[#1158d4]/10 decoration-none select-none"
           >
-            Launch Agent Mobile UI
+            Download Agent App (Android Build)
           </a>
           <span className="text-[10px] text-slate-500 font-medium">
-            Click above to load the mobile-optimized viewport `/agent` in this browser.
+            Click above to open the public Expo build page for the mobile agent application.
           </span>
         </div>
 
