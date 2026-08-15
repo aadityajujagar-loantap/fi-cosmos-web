@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { nativeBridge } from "../../../native/nativeBridge";
 
 interface AgentAboutProps {
   onBack: () => void;
@@ -29,15 +30,43 @@ export function AgentAbout({ onBack }: AgentAboutProps) {
   const [activePanel, setActivePanel] = useState<PanelKey>("privacy");
   const [diagnosticsRun, setDiagnosticsRun] = useState(false);
   const [isDiagnosing, setIsDiagnosing] = useState(false);
+  const [diagnosticsLogs, setDiagnosticsLogs] = useState<string[]>([]);
   const panel = panels[activePanel];
 
-  const runDiagnosticsSim = () => {
+  const runDiagnosticsSim = async () => {
     setIsDiagnosing(true);
     setDiagnosticsRun(false);
-    window.setTimeout(() => {
-      setIsDiagnosing(false);
-      setDiagnosticsRun(true);
-    }, 1000);
+    const logs: string[] = [];
+    logs.push("Initializing diagnostics...");
+
+    const bridgeAvailable = nativeBridge.isAvailable();
+    logs.push(`Native Bridge availability: ${bridgeAvailable ? "AVAILABLE" : "UNAVAILABLE"}`);
+
+    if (bridgeAvailable) {
+      try {
+        logs.push("Sending PING to native...");
+        const pingResult = await nativeBridge.request("PING");
+        logs.push(`PING Result: ${pingResult.reply} (Success)`);
+
+        logs.push("Retrieving GET_APP_INFO from native...");
+        const appInfo = await nativeBridge.request("GET_APP_INFO");
+        logs.push(`GET_APP_INFO Result: platform=${appInfo.platform}, bridgeVersion=${appInfo.bridgeVersion} (Success)`);
+
+        logs.push("Sending APP_READY to native...");
+        await nativeBridge.request("APP_READY");
+        logs.push("APP_READY sent successfully.");
+      } catch (err: any) {
+        logs.push(`Bridge Error: ${err.message || err}`);
+      }
+    } else {
+      logs.push("Skipping native commands (running in standard web browser).");
+      await new Promise((resolve) => setTimeout(resolve, 800));
+    }
+
+    logs.push("Core diagnostics completed.");
+    setDiagnosticsLogs(logs);
+    setIsDiagnosing(false);
+    setDiagnosticsRun(true);
   };
 
   return (
@@ -118,26 +147,37 @@ export function AgentAbout({ onBack }: AgentAboutProps) {
             <h2 className="text-sm font-bold text-[#07183f]">{panel.title}</h2>
             <p className="mt-2 text-xs font-medium leading-relaxed text-[#5c6a85]">{panel.body}</p>
              {activePanel === "diagnostics" ? (
-              <button
-                onClick={runDiagnosticsSim}
-                disabled={isDiagnosing}
-                type="button"
-                className="mt-3 h-10 w-full rounded-xl bg-[#1158d4] text-xs font-bold text-white flex items-center justify-center gap-2 cursor-pointer border-none"
-              >
-                {isDiagnosing ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    <span>Running diagnostics...</span>
-                  </>
-                ) : diagnosticsRun ? (
-                  "Diagnostics Passed \u2714"
-                ) : (
-                  "Run Diagnostics"
+              <div className="mt-3">
+                <button
+                  onClick={runDiagnosticsSim}
+                  disabled={isDiagnosing}
+                  type="button"
+                  className="h-10 w-full rounded-xl bg-[#1158d4] text-xs font-bold text-white flex items-center justify-center gap-2 cursor-pointer border-none"
+                >
+                  {isDiagnosing ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                      </svg>
+                      <span>Running diagnostics...</span>
+                    </>
+                  ) : diagnosticsRun ? (
+                    "Diagnostics Completed \u2714"
+                  ) : (
+                    "Run Diagnostics"
+                  )}
+                </button>
+                {diagnosticsLogs.length > 0 && (
+                  <div className="mt-3 p-3 rounded-xl bg-white border border-[#d8e6ff] font-mono text-[10px] text-[#2c3e50] max-h-40 overflow-y-auto text-left">
+                    {diagnosticsLogs.map((log, idx) => (
+                      <div key={idx} className="py-0.5 border-b border-dashed border-[#edf4ff]/80 last:border-0">
+                        {log}
+                      </div>
+                    ))}
+                  </div>
                 )}
-              </button>
+              </div>
             ) : null}
           </section>
         </div>

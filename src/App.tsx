@@ -29,7 +29,10 @@ import { verifyMobileNumber, verifyOtpCode } from "./services/auth";
 import type { Step } from "./types";
 import { I18nProvider } from "./features/agent/i18n";
 
+import { useNetworkStatus } from "./native/network";
+
 function AgentApp() {
+  const { isOffline } = useNetworkStatus();
   const [step, setStep] = useState<Step>(() => {
     return (localStorage.getItem("isLoggedIn") === "true" ? "home" : "login") as Step;
   });
@@ -87,6 +90,14 @@ function AgentApp() {
   return (
     <I18nProvider>
       <MobileWrapper>
+        {isOffline ? (
+          <div className="bg-[#ee0f1a] text-white py-1.5 px-4 text-[10px] font-bold text-center flex items-center justify-center gap-1.5 shrink-0 z-50 select-none shadow-sm animate-pulse">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-3.5 h-3.5">
+              <path d="M1 1l22 22M16.72 11.06A10.94 10.94 0 0 1 19 12.5M5 12.5a10.94 10.94 0 0 1 5.83-2.84M8.5 16a4.5 4.5 0 0 1 7 0M12 20h.01" />
+            </svg>
+            <span>No internet connection. Some actions may be unavailable.</span>
+          </div>
+        ) : null}
         {popup ? <Popup message={popup} /> : null}
       
         {step === "login" ? (
@@ -259,7 +270,9 @@ export default function App() {
   const pathname = window.location.pathname.toLowerCase();
 
   // Strictly determine if we render the agent mobile module
-  const isAgent = pathname.startsWith("/agent");
+  const isAgent = pathname.startsWith("/agent") || 
+                  window.location.search.includes("mode=agent") || 
+                  window.location.href.includes("android_asset");
 
   if (isAgent) {
     return <AgentApp />;
