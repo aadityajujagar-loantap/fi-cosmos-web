@@ -47,8 +47,29 @@ async function postPdfToNative(doc: jsPDF, filename: string): Promise<boolean> {
 async function downloadPdf(doc: jsPDF, filename: string) {
   if (await postPdfToNative(doc, filename)) return;
 
+  const blob = doc.output("blob");
+
+  // Temporary PWA/Mobile Browser Workaround:
+  // Use Web Share API to share the PDF natively if supported on the device.
+  // This bypasses the "Downloading from chrome" notification tray entirely and hides the URL footprint.
+  if (navigator.share && navigator.canShare) {
+    try {
+      const file = new File([blob], filename, { type: "application/pdf" });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: "Field Investigation Report",
+          text: `Report: ${filename}`,
+        });
+        return;
+      }
+    } catch (shareError) {
+      // If the user cancels sharing or it's blocked, fall through to default download
+      console.warn("Web Share cancelled or failed, using download fallback:", shareError);
+    }
+  }
+
   try {
-    const blob = doc.output("blob");
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
