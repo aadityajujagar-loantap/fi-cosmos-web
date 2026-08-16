@@ -46,7 +46,7 @@ async function postPdfToNative(doc: jsPDF, filename: string): Promise<boolean> {
   return true;
 }
 
-async function downloadPdf(doc: jsPDF, filename: string) {
+async function downloadPdf(doc: jsPDF, filename: string, forceDirectDownload = false) {
   if (await postPdfToNative(doc, filename)) return;
 
   const blob = doc.output("blob");
@@ -54,7 +54,7 @@ async function downloadPdf(doc: jsPDF, filename: string) {
   // Temporary PWA/Mobile Browser Workaround:
   // Use Web Share API to share the PDF natively if supported on the device.
   // This bypasses the "Downloading from chrome" notification tray entirely and hides the URL footprint.
-  if (navigator.share && navigator.canShare) {
+  if (!forceDirectDownload && navigator.share && navigator.canShare) {
     try {
       const file = new File([blob], filename, { type: "application/pdf" });
       if (navigator.canShare({ files: [file] })) {
@@ -117,7 +117,7 @@ function cleanBase64(base64: string): string {
   return `data:image/png;base64,${base64}`;
 }
 
-export async function generateTaskPdf(task: AgentTaskRecord) {
+export async function generateTaskPdf(task: AgentTaskRecord, forceDirectDownload = false) {
   try {
     const doc = new jsPDF({
       orientation: "p",
@@ -401,7 +401,7 @@ export async function generateTaskPdf(task: AgentTaskRecord) {
     });
 
     // Download PDF (Android-safe)
-    void downloadPdf(doc, `FI_Report_${task.id}.pdf`);
+    void downloadPdf(doc, `FI_Report_${task.id}.pdf`, forceDirectDownload);
   } catch (pdfError) {
     const errMsg = pdfError instanceof Error ? pdfError.message : String(pdfError);
     console.error("PDF generation failed:", errMsg);

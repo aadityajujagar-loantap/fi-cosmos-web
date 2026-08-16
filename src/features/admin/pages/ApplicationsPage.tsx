@@ -243,7 +243,7 @@ export function ApplicationsPage() {
               <AdminButton
                 onClick={() => {
                   const agentTask = toAgentTask(selectedTask);
-                  generateTaskPdf(agentTask);
+                  generateTaskPdf(agentTask, true);
                 }}
                 variant="primary"
                 className="w-full justify-center flex items-center gap-2"
