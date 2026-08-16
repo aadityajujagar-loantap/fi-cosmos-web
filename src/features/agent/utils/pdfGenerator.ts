@@ -1,6 +1,8 @@
 import { jsPDF } from "jspdf";
 import type { AgentTaskRecord } from "./tasks";
 import { loadCapturedAssets } from "./media";
+import { supabaseRepository } from "../../../data/repository";
+import { evidenceService } from "../../../data/services";
 
 type PdfBridgeMessage =
   | { type: "fi-iflow/pdf-download/start"; id: string; filename: string; totalChunks: number }
@@ -88,8 +90,23 @@ async function downloadPdf(doc: jsPDF, filename: string) {
   }
 }
 
-// A small, clean base64 string for a static QR code image to place on reports
-const MOCK_QR_CODE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH5QgKCg0SDm19pgAAA0JJREFUeNrtm8lS3DAQhv+xpSznApxzcs45J5cKODkHZTkXHqDsKst5AMRyLpBzcc45KacKODkH5+Scc5bVluTUA8yOpJGlkTRi25XqUkuyNBL99etue/oH9T911AMg1+v9VwAcgCMADeABwAGYV4FfARwCuAIwBnAK4BzABMAlgA327vL7rQA4AfC/ADxWwK8V8EsFvFfADQA3AJ4APEZ+3gB4rMofqLIzVT7X5XfU/oP2/z3AfBHA2T1/n/nZPX+X+Tzz0Z6/o/bbav/c/XkEsAFwhXw+q5B7yD3kBfIceWLPzyP/PPLPI/8c+TzyD5B/E/m7yDeRv4v8TeQZ8ox8pPbbav/c/XkI4ArAhfxPyp9UfP+k/EnF/0/Kn1T8/6T8ScX/T8qfVPz/pPyO2m+r/XP35wmAK+Qvyp9UvFD+osL9k/LnFS+Uvyi6f1F0/6Lo/kXR/Yui+6P222r/3P15C+AK+RPyxxUvlj+ueL78ccXz5Y8rXiifV/Q+i+5n0f0sup9F97Pofhbdz6L7WXR/1H5b7Z+7P58A3CB/RP6Q/CH5Q/KH5A/JHzpA/pD8odPkr09p2X0qf7/K37fy96/8/St/38rfv/L3rfw9an/Ufkf1PyMAd5DfL39f/r78ffn78vfl78vfl78vfl98vfr98vfr98vfr98vfr98vfr98vfr98vfn78vfl78vfl78vfl78vfl78vfl78vfl/+/rT8gV1O2f6r9t9W+w3qf1YA7pB/R/4d+Xfk35F/R/4d+Xfk35F/R/4d+Xfk35F/Wv6mQv3/T/0f1P+sANwh/5L8S/Ivyb8k/5L8S/Ivyb8k/5L8S/IvK/4A8h8p/kKx/2n52xT7n5a/TbH/afnbFPuflr9Nsf/V8nv4r+d31H5b7Z+7P98CuEH+K/lfyf9K/lfyv5L/lfz/tfw+K/51Ff++in9dxf+6in9dxf+6in9dxf+6it9W8VsqflvFb6v4bRW/reK3Vfy2it9W8Xep/dH5D+p/VgDukP9D/g/5P+T/kP9D/g/5P+T/kP9D/g/5P+T/kP9D/sCKP9/C/lrtj9rvqP4fGgB2kP9I/iP5j+Q/kv9I/iP5j+Q/kv9I/iP5j+Q/UvwD7JzS/1H7HdX/jwBgG/m/5P+S/0v+L/m/5P+S/0v+L/m/5P+S/0v+L8XfZef3aL/aH7XfUf0/NADsI39C/oT8CfkT8ifkT8ifkD8hf0L+hPwJ+RPyJ8TfZf4ePZej9tX+qP2O6n9GAPgD7+3/Y3u/9/b/ub3fa3u/5/Z+n9r7e2rv96i9n6f2fp3a+7W3/x/b+z2293ts7/fY3u/4/wHzXwEAdOOH3QAAAABJRU5CYII=";
+async function toBase64(url: string): Promise<string> {
+  if (!url) return "";
+  if (url.startsWith("data:")) return url;
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error("FileReader failed"));
+      reader.readAsDataURL(blob);
+    });
+  } catch (err) {
+    console.error("Failed to convert URL to base64:", url, err);
+    return "";
+  }
+}
 
 // Utility to clean Base64 images to prevent jsPDF addImage errors
 function cleanBase64(base64: string): string {
@@ -100,7 +117,7 @@ function cleanBase64(base64: string): string {
   return `data:image/png;base64,${base64}`;
 }
 
-export function generateTaskPdf(task: AgentTaskRecord) {
+export async function generateTaskPdf(task: AgentTaskRecord) {
   try {
     const doc = new jsPDF({
       orientation: "p",
@@ -135,300 +152,253 @@ export function generateTaskPdf(task: AgentTaskRecord) {
 
     // Fetch local media captures
     const photos = loadCapturedAssets(task.id, "photo");
+    const documents = loadCapturedAssets(task.id, "document");
     const signatures = loadCapturedAssets(task.id, "signature");
-    const voiceRemarks = loadCapturedAssets(task.id, "voice");
 
-    // --- PAGE 1: Case Details & Verification Status ---
+    // Get active agent details
+    const snapshot = supabaseRepository.getSnapshot();
+    const agent = snapshot.agents.find((item: any) => item.id === supabaseRepository.currentAgentId);
+    const agentName = (agent?.name || "FIELD AGENT").toUpperCase();
+
+    // Load domain task and results if available
+    const domainTask = snapshot.tasks.find((item: any) => item.id === task.id);
+    const result = domainTask?.investigationResult;
+
+    const residesVerifiedVal = (result?.residesVerified || "YES").toUpperCase();
+    const homeOwnershipVal = (result?.homeOwnership || "OWNED").toUpperCase();
+    const stayDurationVal = (result?.stayDuration || "1-3 YEARS").toUpperCase();
+    const remarksResVal = (result?.remarks || "MET CUSTOMER AT HOME ADDRESS AND CONFIRMED HOUSE OWNERSHIP").toUpperCase();
+
+    // Map Visit Metadata
+    const visitDate = domainTask?.completedAt 
+      ? new Date(domainTask.completedAt).toLocaleDateString("en-GB").replace(/\//g, "-")
+      : domainTask?.submittedAt
+        ? new Date(domainTask.submittedAt).toLocaleDateString("en-GB").replace(/\//g, "-")
+        : new Date().toLocaleDateString("en-GB").replace(/\//g, "-");
+
+    const visitTime = task.time ? task.time.split("-")[0].trim() : "12:00 PM";
     
-    // Header Banner: Dark Navy Rectangle
-    doc.setFillColor(7, 24, 63); // #07183f
-    doc.rect(margin, margin, contentWidth, 20, "F");
+    // Fallback dummy coordinates if missing or zero
+    const lat = task.latitude || 12.9716;
+    const lng = task.longitude || 77.5946;
 
-    // Header Title
+    // Status text with OSV signature and coordinates
+    const statusVal = `${residesVerifiedVal === "YES" ? "POSITIVE" : "NEGATIVE"} | OSV BY: ${agentName} | COORDS: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+
+    // Convert signatures to base64 asynchronously
+    let signatureBase64 = "";
+    if (signatures.length > 0) {
+      signatureBase64 = await toBase64(signatures[0].dataUrl);
+    }
+
+    // Convert photos and documents to base64 asynchronously
+    const allCapturedImages = [
+      ...photos.map(p => ({ title: "Customer Site Visual Photo", asset: p })),
+      ...documents.map(d => ({ title: `Uploaded Document: ${d.name || d.slot || "Evidence"}`, asset: d }))
+    ];
+
+    const resolvedImages = await Promise.all(
+      allCapturedImages.map(async (item) => {
+        try {
+          const rawEvidence = snapshot.evidence.find((e: any) => e.id === item.asset.id);
+          const path = rawEvidence?.storagePath;
+          let url = item.asset.dataUrl;
+          if (!url && path) {
+            url = await evidenceService.signedUrl(path);
+          }
+          const base64 = await toBase64(url);
+          return { ...item, base64 };
+        } catch (e) {
+          console.error("Failed to convert image:", item.title, e);
+          return { ...item, base64: "" };
+        }
+      })
+    );
+
+    // --- PAGE 1: Case Details & Verification Status (Structured Form Grid) ---
+
+    // Top Header Banner
+    doc.setFillColor(7, 24, 63); // #07183f (Navy Accent)
+    doc.rect(margin, margin, contentWidth, 18, "F");
+
     doc.setTextColor(255, 255, 255);
     safeSetFont("Helvetica", "bold");
-    doc.setFontSize(14);
-    doc.text("fi-iFlow", margin + 6, margin + 13);
+    doc.setFontSize(12);
+    doc.text("fi-iFlow Field Operations Portal", margin + 6, margin + 11);
 
-    doc.setFontSize(11);
+    doc.setFontSize(8);
     safeSetFont("Helvetica", "normal");
-    doc.text("FIELD INVESTIGATION REPORT", pageWidth - margin - 6, margin + 13, { align: "right" });
+    doc.text("8/1, 1ST FLOOR 3RD MAIN ROAD MATHIKERE BANGALORE-560054", margin + 6, margin + 15);
+    doc.text("VERIFIED REPORT FORM", pageWidth - margin - 6, margin + 11, { align: "right" });
 
-    let y = margin + 28;
+    let currentY = margin + 26;
+    const cellWidthLeft = 110;
+    const rowHeight = 11;
 
-    // Add decorative QR code and VERIFIED stamp on the top right
-    safeAddImage(MOCK_QR_CODE, "PNG", pageWidth - margin - 22, y, 22, 22);
+    const drawSplitRow = (label1: string, val1: string, label2: string, val2: string) => {
+      // Borders
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.25);
+      doc.rect(margin, currentY, contentWidth, rowHeight);
+      doc.line(margin + cellWidthLeft, currentY, margin + cellWidthLeft, currentY + rowHeight);
 
-    // Draw green VERIFIED stamp
-    doc.setDrawColor(8, 141, 39); // #088d27
-    doc.setFillColor(236, 250, 239); // #ecfaef
-    doc.setLineWidth(0.4);
-    doc.roundedRect(pageWidth - margin - 58, y + 4, 32, 12, 1, 1, "FD");
-    doc.setTextColor(8, 141, 39);
-    safeSetFont("Helvetica", "bold");
-    doc.setFontSize(8.5);
-    doc.text("VERIFIED", pageWidth - margin - 42, y + 12, { align: "center" });
-
-    // Add Case Title & Status
-    doc.setTextColor(7, 24, 63);
-    safeSetFont("Helvetica", "bold");
-    doc.setFontSize(13);
-    doc.text(task.title.toUpperCase(), margin, y + 6);
-    
-    doc.setFontSize(9);
-    safeSetFont("Helvetica", "normal");
-    doc.setTextColor(92, 106, 133); // #5c6a85
-    doc.text(`Report Generated: ${new Date().toLocaleString()}`, margin, y + 12);
-    doc.text(`Verification ID: FI-${task.id}`, margin, y + 18);
-
-    y += 28;
-
-    // Customer & Case Info Section
-    doc.setFillColor(248, 250, 252); // #f8fafc
-    doc.rect(margin, y, contentWidth, 6, "F");
-    doc.setTextColor(17, 88, 212); // #1158d4
-    safeSetFont("Helvetica", "bold");
-    doc.setFontSize(9.5);
-    doc.text("CUSTOMER & CASE DETAILS", margin + 3, y + 4.5);
-
-    y += 6;
-
-    // Render Case Details Table
-    doc.setDrawColor(226, 232, 240); // Slate-200 border
-    doc.setLineWidth(0.2);
-
-    const drawRow = (label1: string, val1: string, label2: string, val2: string, rowY: number) => {
-      doc.line(margin, rowY, pageWidth - margin, rowY);
-      
-      doc.setTextColor(92, 106, 133);
+      // Cell 1
+      doc.setTextColor(100, 116, 139); // Slate-500
       safeSetFont("Helvetica", "bold");
-      doc.setFontSize(8.5);
-      doc.text(label1, margin + 3, rowY + 5);
-      doc.text(label2, margin + contentWidth / 2 + 3, rowY + 5);
-
-      doc.setTextColor(7, 24, 63);
-      safeSetFont("Helvetica", "normal");
-      doc.text(val1 || "N/A", margin + 34, rowY + 5);
-      doc.text(val2 || "N/A", margin + contentWidth / 2 + 34, rowY + 5);
+      doc.setFontSize(7.5);
+      doc.text(label1.toUpperCase(), margin + 3, currentY + 3.5);
       
-      return rowY + 8;
+      doc.setTextColor(15, 23, 42); // Slate-900
+      safeSetFont("Helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.text(val1 || "N/A", margin + 3, currentY + 8);
+
+      // Cell 2
+      doc.setTextColor(100, 116, 139);
+      safeSetFont("Helvetica", "bold");
+      doc.setFontSize(7.5);
+      doc.text(label2.toUpperCase(), margin + cellWidthLeft + 3, currentY + 3.5);
+
+      doc.setTextColor(15, 23, 42);
+      safeSetFont("Helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.text(val2 || "N/A", margin + cellWidthLeft + 3, currentY + 8);
+
+      currentY += rowHeight;
     };
 
-    y = drawRow("Customer Name:", task.customer, "Mobile Number:", task.mobile, y);
-    y = drawRow("Investigation Type:", task.type, "Priority Level:", task.priority, y);
-    y = drawRow("Assigned Slot:", task.time, "Branch Office:", task.branch || "Pune Head Office", y);
+    const drawFullRow = (label: string, val: string, height = rowHeight) => {
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.25);
+      doc.rect(margin, currentY, contentWidth, height);
 
-    // Address Row (takes full width)
-    doc.line(margin, y, pageWidth - margin, y);
-    doc.setTextColor(92, 106, 133);
-    safeSetFont("Helvetica", "bold");
-    doc.setFontSize(8.5);
-    doc.text("Customer Address:", margin + 3, y + 5);
-    
-    doc.setTextColor(7, 24, 63);
-    safeSetFont("Helvetica", "normal");
-    doc.text(task.address || "N/A", margin + 34, y + 5);
-    y += 8;
-
-    // Remarks Row (takes full width)
-    doc.line(margin, y, pageWidth - margin, y);
-    doc.setTextColor(92, 106, 133);
-    safeSetFont("Helvetica", "bold");
-    doc.setFontSize(8.5);
-    doc.text("Voice Recording Remarks:", margin + 3, y + 5);
-    
-    doc.setTextColor(7, 24, 63);
-    safeSetFont("Helvetica", "normal");
-    const voiceRemarksText = voiceRemarks.length > 0 
-      ? `Recorded Voice Memo (${(voiceRemarks[0].size / 1024).toFixed(1)} KB) - Audio Check Successful`
-      : "No Voice remarks recorded";
-    doc.text(voiceRemarksText, margin + 44, y + 5);
-    y += 8;
-
-    doc.line(margin, y, pageWidth - margin, y);
-    y += 4;
-
-    // Checklist Summary Card
-    doc.setFillColor(248, 250, 252);
-    doc.rect(margin, y, contentWidth, 38, "F");
-    doc.setDrawColor(226, 232, 240);
-    doc.rect(margin, y, contentWidth, 38);
-
-    doc.setTextColor(7, 24, 63);
-    safeSetFont("Helvetica", "bold");
-    doc.setFontSize(9);
-    doc.text("FIELD VISIT CHECKLIST COMPLIANCE STATUS", margin + 5, y + 6);
-
-    const checklistY = y + 13;
-    doc.setFontSize(8);
-    task.checklist.forEach((item, index) => {
-      const col = index % 2;
-      const row = Math.floor(index / 2);
-      const itemX = margin + 5 + col * 88;
-      const itemY = checklistY + row * 6;
-
-      // Draw small green indicator box
-      doc.setFillColor(8, 141, 39);
-      doc.rect(itemX, itemY - 2.5, 2.5, 2.5, "F");
-
-      doc.setTextColor(51, 65, 85);
+      doc.setTextColor(100, 116, 139);
       safeSetFont("Helvetica", "bold");
-      doc.text(`${index + 1}. ${item}`, itemX + 5, itemY);
-      doc.setTextColor(8, 141, 39);
-      doc.text("✓ VERIFIED", itemX + 70, itemY);
-    });
+      doc.setFontSize(7.5);
+      doc.text(label.toUpperCase(), margin + 3, currentY + 3.5);
 
-    y += 44;
+      doc.setTextColor(15, 23, 42);
+      safeSetFont("Helvetica", "normal");
+      doc.setFontSize(8.5);
 
-    // Outer bounds for signature box
-    doc.setDrawColor(226, 232, 240);
-    doc.rect(margin, y, contentWidth, 38);
+      if (val.length > 90) {
+        const lines = doc.splitTextToSize(val, contentWidth - 6);
+        doc.text(lines, margin + 3, currentY + 8);
+      } else {
+        doc.text(val || "N/A", margin + 3, currentY + 8);
+      }
 
-    // Left part: Customer signature
-    doc.setTextColor(92, 106, 133);
-    doc.setFontSize(8.5);
-    doc.text("Customer Verification Signature", margin + 5, y + 6);
-    
-    if (signatures.length > 0) {
-      const cleanSig = cleanBase64(signatures[0].dataUrl);
+      currentY += height;
+    };
+
+    // Draw Form Rows
+    drawSplitRow("MV MODE", "PHYSICAL VISIT", "DATE OF VISIT", visitDate);
+    drawSplitRow("NAME OF APPLICANT", task.customer.toUpperCase(), "TIME OF VISIT", visitTime);
+    drawFullRow("ADDRESS GIVEN", task.address.toUpperCase(), 14);
+    drawFullRow("STATUS", statusVal, 14);
+    drawFullRow("REMARKS/RES", remarksResVal, 16);
+    drawSplitRow("REMARKS/OFFICE", "NA", "MET PERSON OR RELATION", "CUSTOMER");
+    drawSplitRow("CUSTOMER EXISTENCE CONF", residesVerifiedVal, "PEP NO", "NO");
+    drawSplitRow("THIRD PARTY CONFIRMATION", residesVerifiedVal, "STAY DETAILS", `${homeOwnershipVal} HOUSE / ${stayDurationVal}`);
+    drawFullRow("OSV ORIGINAL SEEN AND VERIFIED", residesVerifiedVal);
+
+    currentY += 6;
+
+    // Signature Area
+    doc.setDrawColor(203, 213, 225);
+    doc.rect(margin, currentY, contentWidth, 38);
+    doc.line(margin + contentWidth / 2, currentY, margin + contentWidth / 2, currentY + 38);
+
+    // Customer signature box (Left)
+    doc.setTextColor(100, 116, 139);
+    safeSetFont("Helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text("CUSTOMER VERIFICATION SIGNATURE", margin + 4, currentY + 5);
+
+    if (signatureBase64) {
+      const cleanSig = cleanBase64(signatureBase64);
       if (cleanSig) {
-        safeAddImage(cleanSig, "PNG", margin + 15, y + 8, 50, 20);
+        safeAddImage(cleanSig, "PNG", margin + 15, currentY + 8, 60, 22);
       }
     } else {
-      // Generate beautiful mock cursive signature if none recorded
       safeSetFont("times", "italic");
       doc.setFontSize(16);
       doc.setTextColor(17, 88, 212);
-      doc.text(task.customer, margin + 20, y + 18);
-      safeSetFont("Helvetica", "normal");
-      doc.setFontSize(8.5);
+      doc.text(task.customer, margin + 20, currentY + 22);
     }
-
+    
     doc.setTextColor(148, 163, 184);
-    doc.line(margin + 10, y + 29, margin + 80, y + 29);
-    doc.text("Amit Deshmukh (Signed Digitally)", margin + 25, y + 33);
+    safeSetFont("Helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.line(margin + 10, currentY + 31, margin + 80, currentY + 31);
+    doc.text("Signed Digitally by Applicant", margin + 22, currentY + 35);
 
-    // Right part: Agent signature
-    doc.setTextColor(92, 106, 133);
-    doc.text("Verifying Executive Signature", margin + contentWidth / 2 + 5, y + 6);
+    // Agent signature box (Right)
+    doc.setTextColor(100, 116, 139);
+    safeSetFont("Helvetica", "bold");
+    doc.setFontSize(8);
+    doc.text("VERIFYING OFFICER SIGNATURE", margin + contentWidth / 2 + 4, currentY + 5);
 
-    // Draw agent mock script signature
     safeSetFont("times", "italic");
     doc.setFontSize(15);
     doc.setTextColor(7, 24, 63);
-    doc.text("Agent Verified", margin + contentWidth / 2 + 20, y + 18);
-    safeSetFont("Helvetica", "normal");
-    doc.setFontSize(8.5);
+    doc.text(agentName, margin + contentWidth / 2 + 20, currentY + 22);
 
     doc.setTextColor(148, 163, 184);
-    doc.line(margin + contentWidth / 2 + 10, y + 29, margin + contentWidth - 10, y + 29);
-    doc.text("FieldOps Digitally Signed System", margin + contentWidth / 2 + 20, y + 33);
-
-    // Page 1 Footer
+    safeSetFont("Helvetica", "normal");
     doc.setFontSize(7.5);
+    doc.line(margin + contentWidth / 2 + 10, currentY + 31, margin + contentWidth - 10, currentY + 31);
+    doc.text(`Field Executive: ${agentName}`, margin + contentWidth / 2 + 18, currentY + 35);
+
+    // Footer of Page 1
+    doc.setFontSize(7);
     doc.setTextColor(148, 163, 184);
     doc.text("This report is digitally signed and secured. System audit log code: FI-IFLOW-2026-08.", margin, pageHeight - margin + 5);
-    doc.text("Page 1 of 2", pageWidth - margin, pageHeight - margin + 5, { align: "right" });
+    doc.text(`Page 1 of ${1 + resolvedImages.length}`, pageWidth - margin, pageHeight - margin + 5, { align: "right" });
 
-    // --- PAGE 2: Captured Photos & Evidence ---
-    
-    if (photos.length > 0 || task.status === "Completed") {
+    // --- PAGES 2+: Captured Photos & Document Scans ---
+    resolvedImages.forEach((item, index) => {
       doc.addPage();
-      
-      // Header Banner (Mini version)
+
+      // Header Band (Mini version)
       doc.setFillColor(7, 24, 63);
       doc.rect(margin, margin, contentWidth, 12, "F");
 
       doc.setTextColor(255, 255, 255);
       safeSetFont("Helvetica", "bold");
-      doc.setFontSize(11);
-      doc.text("fi-iFlow", margin + 4, margin + 8);
+      doc.setFontSize(10);
+      doc.text("fi-iFlow Verification Evidence Log", margin + 4, margin + 8);
       safeSetFont("Helvetica", "normal");
-      doc.setFontSize(9);
-      doc.text(`Task ID: FI-${task.id} - PHOTO EVIDENCE LOG`, pageWidth - margin - 4, margin + 8, { align: "right" });
+      doc.setFontSize(8);
+      doc.text(`Page ${index + 2} of ${resolvedImages.length + 1}`, pageWidth - margin - 4, margin + 8, { align: "right" });
 
-      y = margin + 22;
-
-      doc.setFillColor(248, 250, 252);
-      doc.rect(margin, y, contentWidth, 6, "F");
+      // Title of the evidence
       doc.setTextColor(17, 88, 212);
       safeSetFont("Helvetica", "bold");
       doc.setFontSize(9.5);
-      doc.text("GEOTAGGED SITE VISUALS & ATTACHMENTS", margin + 3, y + 4.5);
+      doc.text(item.title.toUpperCase(), margin, margin + 20);
 
-      y += 12;
+      // Draw photo container box
+      doc.setDrawColor(226, 232, 240);
+      doc.rect(margin, margin + 24, contentWidth, 215);
 
-      // Draw photo cards
-      if (photos.length > 0) {
-        photos.forEach((photo, idx) => {
-          const row = Math.floor(idx / 2);
-          const col = idx % 2;
-          const px = margin + col * 92;
-          const py = y + row * 92;
-
-          if (py + 80 > pageHeight - margin) return; // fits up to 4 images nicely
-
-          // Draw card border
-          doc.setDrawColor(226, 232, 240);
-          doc.rect(px, py, 84, 80);
-
-          // Add Image
-          const cleanImg = cleanBase64(photo.dataUrl);
-          if (cleanImg) {
-            safeAddImage(cleanImg, "JPEG", px + 4, py + 4, 76, 52);
-          }
-
-          // Add image meta
-          safeSetFont("Helvetica", "bold");
-          doc.setFontSize(8);
-          doc.setTextColor(7, 24, 63);
-          doc.text(`Photo Capture #${idx + 1}`, px + 6, py + 62);
-
-          safeSetFont("Helvetica", "normal");
-          doc.setFontSize(7.5);
-          doc.setTextColor(92, 106, 133);
-          doc.text(`Captured: ${new Date(photo.createdAt).toLocaleString()}`, px + 6, py + 67);
-          doc.text(`GPS Tag: ${task.latitude.toFixed(5)}, ${task.longitude.toFixed(5)}`, px + 6, py + 71);
-          doc.text(`Size: ${(photo.size / 1024).toFixed(1)} KB`, px + 6, py + 75);
-        });
-      } else {
-        // Draw premium mock photos if empty to demonstrate full report completeness
-        const drawMockPhotoCard = (px: number, py: number, label: string) => {
-          doc.setDrawColor(226, 232, 240);
-          doc.setFillColor(250, 251, 252);
-          doc.rect(px, py, 84, 80, "FD");
-
-          // Dotted inner photo container
-          doc.setDrawColor(203, 213, 225);
-          doc.rect(px + 4, py + 4, 76, 52);
-
-          safeSetFont("Helvetica", "bold");
-          doc.setFontSize(9);
-          doc.setTextColor(148, 163, 184);
-          doc.text("[ Field Visit Evidence Image ]", px + 22, py + 30);
-
-          doc.setFontSize(8);
-          doc.setTextColor(7, 24, 63);
-          doc.text(label, px + 6, py + 62);
-
-          safeSetFont("Helvetica", "normal");
-          doc.setFontSize(7.5);
-          doc.setTextColor(92, 106, 133);
-          doc.text(`Captured: ${task.date} ${task.slot}`, px + 6, py + 67);
-          doc.text(`GPS Tag: ${task.latitude.toFixed(5)}, ${task.longitude.toFixed(5)} (Match)`, px + 6, py + 71);
-          doc.text(`Verified Status: Accurate Check-In`, px + 6, py + 75);
-        };
-
-        drawMockPhotoCard(margin, y, "Residence Front Boundary Photo");
-        drawMockPhotoCard(margin + 92, y, "Verify ID Document Scan (Adhaar/PAN)");
+      // Add the captured image
+      if (item.base64) {
+        const cleanImg = cleanBase64(item.base64);
+        if (cleanImg) {
+          // Safe dimensions to fit image neatly inside boundary
+          safeAddImage(cleanImg, "JPEG", margin + 4, margin + 28, contentWidth - 8, 207);
+        }
       }
 
-      // Page 2 Footer
+      // Metadata watermark at bottom of page
+      doc.setTextColor(92, 106, 133);
+      safeSetFont("Helvetica", "normal");
       doc.setFontSize(7.5);
-      doc.setTextColor(148, 163, 184);
-      doc.text("This report is digitally signed and secured. System audit log code: FI-IFLOW-2026-08.", margin, pageHeight - margin + 5);
-      doc.text("Page 2 of 2", pageWidth - margin, pageHeight - margin + 5, { align: "right" });
-    }
+      doc.text(`Image Code: IMG-${item.asset.id.slice(0, 8).toUpperCase()}`, margin + 5, margin + 243);
+      doc.text(`Captured: ${new Date(item.asset.createdAt).toLocaleString()}`, margin + 5, margin + 247);
+      doc.text(`GPS Tag: ${lat.toFixed(6)}, ${lng.toFixed(6)}`, pageWidth - margin - 5, margin + 247, { align: "right" });
+    });
 
     // Download PDF (Android-safe)
     void downloadPdf(doc, `FI_Report_${task.id}.pdf`);

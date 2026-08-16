@@ -1,6 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useAppData } from "../../../data/dataContext";
+import { useAgentLocation } from "../location/agentLocationContext";
+import { selectUnreadCount } from "../../../domain/selectors";
 import type { Tone, SummaryCard, Task, Step } from "../../../types";
-import { isTerminalStatus, loadAgentTasks, setActiveAgentTaskId, type AgentTaskRecord } from "../utils/tasks";
+import { setActiveAgentTaskId, toAgentTasks, type AgentTaskRecord } from "../utils/tasks";
 
 const toneStyles: Record<Tone, { accent: string; card: string; iconBg: string; soft: string; text: string }> = {
   blue: {
@@ -135,13 +138,7 @@ function ChevronRight() {
   );
 }
 
-function PlusIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.5" aria-hidden="true">
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
+
 
 function SummaryIcon({ icon }: { icon: SummaryCard["icon"] }) {
   if (icon === "hourglass") {
@@ -281,9 +278,14 @@ interface AgentHomeProps {
 }
 
 export function AgentHome({ onNavigate }: AgentHomeProps) {
-  const [taskQueue] = useState<AgentTaskRecord[]>(() => loadAgentTasks());
-  const todaysTasks = useMemo(
-    () => taskQueue.filter((task) => task.date === "Today" && !isTerminalStatus(task.status)),
+  const { state, agentActor } = useAppData();
+  const { coordinates: agentLocation } = useAgentLocation();
+  const taskQueue = useMemo<AgentTaskRecord[]>(() => toAgentTasks(state.tasks, agentLocation), [agentLocation, state.tasks]);
+  const unreadCount = selectUnreadCount(state, agentActor.id);
+  const homeTasks = useMemo(
+    () => taskQueue
+      .filter((task) => ["Assigned", "Accepted", "In Progress", "Rework Required"].includes(task.status))
+      .sort((first, second) => (first.status === "Assigned" ? -1 : 0) - (second.status === "Assigned" ? -1 : 0) || Date.parse(first.dueAt) - Date.parse(second.dueAt)),
     [taskQueue],
   );
   const summaries = useMemo<SummaryCard[]>(() => {
@@ -292,8 +294,8 @@ export function AgentHome({ onNavigate }: AgentHomeProps) {
     return [
       { label: "Total Tasks", count: taskQueue.length, icon: "clipboard", tone: "blue" },
       { label: "In Progress", count: countByStatus("In Progress"), icon: "hourglass", tone: "orange" },
-      { label: "Completed", count: countByStatus("Completed"), icon: "check", tone: "green" },
-      { label: "Pending", count: countByStatus("Pending"), icon: "alert", tone: "red" },
+      { label: "Completed", count: taskQueue.filter((t) => t.status === "Completed" || t.status === "Submitted").length, icon: "check", tone: "green" },
+      { label: "Assigned", count: countByStatus("Assigned"), icon: "alert", tone: "red" },
     ];
   }, [taskQueue]);
 
@@ -331,7 +333,7 @@ export function AgentHome({ onNavigate }: AgentHomeProps) {
             className="relative grid h-9 w-9 flex-none place-items-center rounded-xl bg-white text-[#07183f] hover:bg-slate-50 cursor-pointer"
           >
             <BellIcon />
-            <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-red-500" />
+            {unreadCount ? <span className="absolute right-0 top-0 grid min-h-4 min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">{unreadCount}</span> : null}
           </button>
         </header>
 
@@ -345,7 +347,7 @@ export function AgentHome({ onNavigate }: AgentHomeProps) {
               </span>
             </h2>
             <p className="mt-1 text-xs font-medium text-[#5c6a85] leading-snug">
-              You have {todaysTasks.length} tasks assigned today.
+              You have {homeTasks.length} active assigned tasks.
             </p>
           </div>
           <div className="w-28 h-20 flex-none flex items-center justify-center">
@@ -377,11 +379,11 @@ export function AgentHome({ onNavigate }: AgentHomeProps) {
           })}
         </section>
 
-        {/* Today's Tasks Section (Scrollable list container only) */}
+        {/* Assigned Tasks Section (Scrollable list container only) */}
         <section className="mt-5 border border-[#e6ebf1] rounded-[18px] bg-white shadow-sm overflow-hidden w-full flex-1 flex flex-col min-h-0">
           <header className="flex items-center justify-between px-4 py-3 border-b border-[#edf1f5] bg-slate-50/30 flex-none">
             <h2 className="text-sm font-bold leading-none text-[#07183f]">
-              Today's Tasks
+              Assigned Tasks
             </h2>
             <button onClick={() => onNavigate?.("location-map")} type="button" className="flex items-center gap-1 text-[11px] font-bold leading-none text-[#1158d4] cursor-pointer hover:underline bg-transparent border-0">
               <MapIcon />
@@ -390,7 +392,7 @@ export function AgentHome({ onNavigate }: AgentHomeProps) {
           </header>
 
           <div className="flex-1 overflow-y-auto min-h-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-            {todaysTasks.map((task) => {
+            {homeTasks.map((task) => {
               const tone = toneStyles[task.tone];
               return (
                 <article
@@ -422,7 +424,7 @@ export function AgentHome({ onNavigate }: AgentHomeProps) {
 
                       <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold leading-none text-[#1158d4]">
                         <ClockIcon />
-                        <span className="truncate">{task.time}</span>
+                        <span className="truncate">{task.date} | {task.time}</span>
                       </div>
                     </div>
                   </div>
@@ -440,7 +442,7 @@ export function AgentHome({ onNavigate }: AgentHomeProps) {
                           : "border border-[#1158d4] text-[#1158d4] bg-white hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md flex items-center justify-center w-[74px] cursor-pointer"
                       }
                     >
-                      Start Task
+                      {task.status === "Assigned" ? "View" : task.status === "Rework Required" ? "Rework" : "Continue"}
                     </button>
                     <div className="text-slate-400 pl-0.5">
                       <ChevronRight />
@@ -468,13 +470,6 @@ export function AgentHome({ onNavigate }: AgentHomeProps) {
           >
             <NavIcon type="tasks" />
             <span className="text-[10px] font-medium leading-none">My Tasks</span>
-          </button>
-          
-          <button onClick={() => onNavigate?.("add-task")} type="button" className="flex flex-1 flex-col items-center justify-end relative h-full pb-1 text-[#70798d]">
-            <span className="absolute -top-5 grid h-12 w-12 place-items-center rounded-full bg-[#1158d4] text-white shadow-[0_6px_14px_rgba(19,91,215,0.3)] hover:scale-105 transition-transform duration-200 cursor-pointer">
-              <PlusIcon />
-            </span>
-            <span className="text-[10px] font-medium leading-none mt-auto">Add Task</span>
           </button>
           
           <button

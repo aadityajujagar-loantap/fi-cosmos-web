@@ -1,6 +1,6 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import type { Step } from "../../../types";
-import { addCapturedAsset, deleteCapturedAsset, loadCapturedAssets, type CapturedAsset } from "../utils/media";
+import { addCapturedAsset, addCapturedBlob, deleteCapturedAsset, loadCapturedAssets, type CapturedAsset } from "../utils/media";
 import { getActiveAgentTask } from "../utils/tasks";
 
 interface DocumentSlotConfig {
@@ -15,7 +15,7 @@ interface DocumentSlotProps extends DocumentSlotConfig {
   expanded: boolean;
   onDelete: (assetId: string) => void;
   onCameraCapture: () => void;
-  onUpload: () => void;
+  onFilesSelected: (files: FileList | null, slotId: string) => void;
   onToggleExpand: () => void;
 }
 
@@ -86,8 +86,9 @@ function DocumentSlot({
   expanded,
   onDelete,
   onCameraCapture,
-  onUpload,
+  onFilesSelected,
   onToggleExpand,
+  id,
   required,
   subtitle,
   title,
@@ -147,21 +148,29 @@ function DocumentSlot({
             <button
               onClick={onCameraCapture}
               type="button"
-              className="flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-[#1158d4] text-xs font-bold text-white"
+              className="flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-[#1158d4] text-xs font-bold text-white border-0"
             >
               <CameraIcon />
               Camera
             </button>
-            <button
-              onClick={onUpload}
-              type="button"
-              className="flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#d8e0eb] bg-white text-xs font-bold text-[#1158d4]"
+            <label
+              className="flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#d8e0eb] bg-white text-xs font-bold text-[#1158d4] hover:bg-slate-50"
             >
+              <input
+                type="file"
+                className="hidden"
+                accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png"
+                multiple
+                onChange={(e) => {
+                  onFilesSelected(e.target.files, id);
+                  e.target.value = "";
+                }}
+              />
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="h-4 w-4" aria-hidden="true">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
               </svg>
               Upload
-            </button>
+            </label>
           </div>
         </div>
       ) : null}
@@ -190,32 +199,132 @@ export function AgentCaptureDocs({
   });
   const [documents, setDocuments] = useState<CapturedAsset[]>(() => loadCapturedAssets(task.id, "document"));
   const [error, setError] = useState("");
-  const [activeSlot, setActiveSlot] = useState<string | null>(null);
+  // Custom inline camera states
+  const [cameraActiveSlot, setCameraActiveSlot] = useState<string | null>(null);
+  const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("environment");
+  const [cameraStatus, setCameraStatus] = useState<"starting" | "ready" | "blocked" | "unsupported">("starting");
+  const [isSaving, setIsSaving] = useState(false);
+  const [triggerFlashAnimation, setTriggerFlashAnimation] = useState(false);
 
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const uploadInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   const reloadDocuments = () => setDocuments(loadCapturedAssets(task.id, "document"));
   const assetsForSlot = (slotId: string) => documents.filter((asset) => asset.slot === slotId);
 
-  const handleCapturedFiles = async (fileList: FileList | null) => {
-    if (!fileList?.length || !activeSlot) return;
+  const stopInlineCamera = useCallback(() => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setCameraActiveSlot(null);
+  }, []);
+
+  const startInlineCamera = useCallback(async (slotId: string) => {
+    setError("");
+    setCameraActiveSlot(slotId);
+    setCameraStatus("starting");
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraStatus("unsupported");
+      setError("Inline camera not supported on this browser.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: cameraFacing },
+          height: { ideal: 960 },
+          width: { ideal: 1280 },
+        },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setCameraStatus("ready");
+    } catch {
+      setCameraStatus("blocked");
+      setError("Unable to access camera.");
+    }
+  }, [cameraFacing]);
+
+  // Restart camera if facing changes while active
+  useEffect(() => {
+    if (cameraActiveSlot) {
+      void startInlineCamera(cameraActiveSlot);
+    }
+  }, [cameraFacing, startInlineCamera]);
+
+  // Cleanup stream on unmount
+  useEffect(() => {
+    return () => {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
+
+  const captureInlineDoc = async () => {
+    const video = videoRef.current;
+    if (!video || cameraStatus !== "ready" || !video.videoWidth || !video.videoHeight || !cameraActiveSlot) {
+      return;
+    }
+
+    setIsSaving(true);
+    setError("");
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Unable to capture document frame.");
+
+      if (cameraFacing === "user") {
+        context.translate(canvas.width, 0);
+        context.scale(-1, 1);
+      }
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((nextBlob) => {
+          if (nextBlob) resolve(nextBlob);
+          else reject(new Error("Unable to save captured document."));
+        }, "image/jpeg", 0.92);
+      });
+
+      await addCapturedBlob(blob, {
+        kind: "document",
+        mimeType: "image/jpeg",
+        name: `document_${cameraActiveSlot}_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.jpg`,
+        slot: cameraActiveSlot,
+        taskId: task.id,
+      });
+      reloadDocuments();
+      setTriggerFlashAnimation(true);
+      window.setTimeout(() => setTriggerFlashAnimation(false), 450);
+      setExpanded((prev) => ({ ...prev, [cameraActiveSlot]: true }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to save document.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCapturedFilesForSlot = async (fileList: FileList | null, slotId: string) => {
+    if (!fileList?.length || !slotId) return;
     setError("");
     try {
       for (const file of Array.from(fileList)) {
         await addCapturedAsset(file, {
           kind: "document",
-          slot: activeSlot,
+          slot: slotId,
           taskId: task.id,
         });
       }
       reloadDocuments();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to save document.");
-    } finally {
-      if (cameraInputRef.current) cameraInputRef.current.value = "";
-      if (uploadInputRef.current) uploadInputRef.current.value = "";
-      setActiveSlot(null);
     }
   };
 
@@ -259,24 +368,94 @@ export function AgentCaptureDocs({
           <h1 className="max-w-[240px] truncate text-lg font-bold text-[#07183f]">Capture Documents</h1>
         </header>
 
-        <input
-          ref={cameraInputRef}
-          accept="image/*,application/pdf"
-          capture="environment"
-          className="hidden"
-          onChange={(event) => void handleCapturedFiles(event.target.files)}
-          type="file"
-        />
-        <input
-          ref={uploadInputRef}
-          accept="image/*,application/pdf"
-          className="hidden"
-          multiple
-          onChange={(event) => void handleCapturedFiles(event.target.files)}
-          type="file"
-        />
+        {triggerFlashAnimation ? (
+          <div className="absolute inset-0 z-50 bg-white" style={{ animation: "flashEffect 0.4s ease-out forwards" }} />
+        ) : null}
+
+        <style>{`
+          @keyframes flashEffect {
+            0% { opacity: 1; }
+            100% { opacity: 0; }
+          }
+        `}</style>
 
         <div className="mt-2 flex min-h-0 w-full flex-1 flex-col gap-4 overflow-y-auto pb-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          
+          {/* Custom inline camera viewfinder container */}
+          {cameraActiveSlot && (
+            <div className="relative flex flex-col gap-2 p-3 bg-slate-900 rounded-2xl border border-slate-700 mb-2 animate-slide-down text-left flex-none">
+              <div className="flex items-center justify-between text-white text-xs font-bold px-1">
+                <span>Capture: {documentSlots.find(s => s.id === cameraActiveSlot)?.title}</span>
+                <button
+                  onClick={stopInlineCamera}
+                  type="button"
+                  className="text-slate-400 hover:text-white bg-transparent border-0 cursor-pointer text-xs"
+                >
+                  Close Camera
+                </button>
+              </div>
+
+              <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl bg-black border border-slate-800">
+                <video
+                  ref={videoRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  className={`h-full w-full object-cover ${cameraFacing === "user" ? "-scale-x-100" : ""} ${cameraStatus === "ready" ? "opacity-100" : "opacity-0"}`}
+                />
+                {cameraStatus !== "ready" && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white bg-slate-950">
+                    <div className="w-8 h-8 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                    <span className="text-[10px] font-bold">Initializing Camera...</span>
+                  </div>
+                )}
+                <div className="pointer-events-none absolute left-4 top-4 h-6 w-6 rounded-tl border-l border-t border-white/50" />
+                <div className="pointer-events-none absolute right-4 top-4 h-6 w-6 rounded-tr border-r border-t border-white/50" />
+                <div className="pointer-events-none absolute bottom-4 left-4 h-6 w-6 rounded-bl border-b border-l border-white/50" />
+                <div className="pointer-events-none absolute bottom-4 right-4 h-6 w-6 rounded-br border-b border-r border-white/50" />
+              </div>
+
+              <div className="flex justify-between items-center gap-3 mt-1.5 px-1">
+                <button
+                  onClick={() => setCameraFacing((current) => (current === "environment" ? "user" : "environment"))}
+                  type="button"
+                  className="h-8 px-3 rounded-lg bg-slate-800 border-0 hover:bg-slate-700 text-white text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                >
+                  Switch Camera
+                </button>
+
+                <button
+                  onClick={captureInlineDoc}
+                  type="button"
+                  disabled={cameraStatus !== "ready" || isSaving}
+                  className="w-12 h-12 rounded-full border-4 border-white bg-[#1158d4] p-0.5 outline-none hover:scale-105 active:scale-95 cursor-pointer disabled:opacity-50 flex items-center justify-center"
+                  aria-label="Capture document page"
+                >
+                  <div className="w-full h-full rounded-full bg-white flex items-center justify-center text-[#1158d4]">
+                    <CameraIcon />
+                  </div>
+                </button>
+
+                <label
+                  className="h-8 px-3 rounded-lg bg-slate-800 border-0 hover:bg-slate-700 text-white text-[10px] font-bold flex items-center justify-center gap-1 cursor-pointer"
+                >
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png"
+                    multiple
+                    onChange={(e) => {
+                      void handleCapturedFilesForSlot(e.target.files, cameraActiveSlot);
+                      e.target.value = "";
+                      stopInlineCamera();
+                    }}
+                  />
+                  Upload File
+                </label>
+              </div>
+            </div>
+          )}
+
           <div className="flex w-full flex-none items-start gap-2.5 rounded-xl border border-[#d8e6ff] bg-[#f4f8ff] p-3 text-left">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="mt-0.5 h-5 w-5 flex-none text-[#1158d4]" aria-hidden="true">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -296,13 +475,9 @@ export function AgentCaptureDocs({
               expanded={expanded[slot.id]}
               onDelete={removeDocument}
               onCameraCapture={() => {
-                setActiveSlot(slot.id);
-                setTimeout(() => cameraInputRef.current?.click(), 0);
+                void startInlineCamera(slot.id);
               }}
-              onUpload={() => {
-                setActiveSlot(slot.id);
-                setTimeout(() => uploadInputRef.current?.click(), 0);
-              }}
+              onFilesSelected={handleCapturedFilesForSlot}
               onToggleExpand={() => setExpanded((current) => ({ ...current, [slot.id]: !current[slot.id] }))}
             />
           ))}
@@ -327,7 +502,10 @@ export function AgentCaptureDocs({
 
         <footer className="flex flex-none items-center gap-3 border-t border-[#eef2f6] bg-white pt-3">
           <button
-            onClick={onBack}
+            onClick={() => {
+              stopInlineCamera();
+              onBack();
+            }}
             type="button"
             className="flex h-12 flex-1 items-center justify-center rounded-[14px] border border-[#1158d4] bg-white text-sm font-bold text-[#1158d4] shadow-sm hover:bg-slate-50"
           >

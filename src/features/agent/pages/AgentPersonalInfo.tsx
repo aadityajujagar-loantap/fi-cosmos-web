@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useAppData } from "../../../data/dataContext";
+import { useAuth } from "../../../auth/authContext";
 import type { Step } from "../../../types";
 import { AgentProfileCard } from "../components/AgentProfileCard";
 
@@ -24,13 +26,7 @@ function InfoRow({ icon, label, value, iconColorClass = "text-[#1158d4]", iconBg
   );
 }
 
-function PlusIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.5" aria-hidden="true">
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
+
 
 function NavIcon({ type }: { type: "home" | "tasks" | "history" | "profile" }) {
   if (type === "tasks") {
@@ -73,54 +69,33 @@ interface AgentPersonalInfoProps {
 }
 
 export function AgentPersonalInfo({ onBack, onNavigate }: AgentPersonalInfoProps) {
+  const { state, agentId } = useAppData();
+  const { profile } = useAuth();
+  const agent = state.agents.find((item) => item.id === agentId);
   // Personal Details
   const [isEditingPersonal, setIsEditingPersonal] = useState(false);
-  const [fullName, setFullName] = useState(() => localStorage.getItem("personal_fullName") || "Amit Deshmukh");
-  const [dob, setDob] = useState(() => localStorage.getItem("personal_dob") || "12 May 1992");
-  const [gender, setGender] = useState(() => localStorage.getItem("personal_gender") || "Male");
-  const [mobile, setMobile] = useState(() => localStorage.getItem("personal_mobile") || "+91 98765 43210");
-  const [email, setEmail] = useState(() => localStorage.getItem("personal_email") || "amit.deshmukh@fieldops.com");
-  const [address, setAddress] = useState(() => localStorage.getItem("personal_address") || "102, Sai Residency, Baner Road, Pune - 411045, Maharashtra, India");
+  const [fullName, setFullName] = useState(() => profile?.displayName || "");
+  const [dob, setDob] = useState("");
+  const [gender, setGender] = useState("");
+  const [mobile, setMobile] = useState(() => agent?.phone || "");
+  const [email, setEmail] = useState(() => profile?.email || "");
+  const [address, setAddress] = useState(() => agent ? agent.city + ", " + agent.state : "");
 
   // Emergency Contact
   const [isEditingEmergency, setIsEditingEmergency] = useState(false);
-  const [emergencyName, setEmergencyName] = useState(() => localStorage.getItem("personal_emergencyName") || "Rohini Deshmukh");
-  const [emergencyPhone, setEmergencyPhone] = useState(() => localStorage.getItem("personal_emergencyPhone") || "+91 91234 56789");
-  const [emergencyRelation, setEmergencyRelation] = useState(() => localStorage.getItem("personal_emergencyRelation") || "Spouse");
+  const [emergencyName, setEmergencyName] = useState("");
+  const [emergencyPhone, setEmergencyPhone] = useState("");
+  const [emergencyRelation, setEmergencyRelation] = useState("");
 
-  const handleSavePersonal = () => {
-    localStorage.setItem("personal_fullName", fullName);
-    localStorage.setItem("personal_dob", dob);
-    localStorage.setItem("personal_gender", gender);
-    localStorage.setItem("personal_mobile", mobile);
-    localStorage.setItem("personal_email", email);
-    localStorage.setItem("personal_address", address);
-    setIsEditingPersonal(false);
-  };
+  const handleSavePersonal = () => setIsEditingPersonal(false);
 
   const handleCancelPersonal = () => {
-    setFullName(localStorage.getItem("personal_fullName") || "Amit Deshmukh");
-    setDob(localStorage.getItem("personal_dob") || "12 May 1992");
-    setGender(localStorage.getItem("personal_gender") || "Male");
-    setMobile(localStorage.getItem("personal_mobile") || "+91 98765 43210");
-    setEmail(localStorage.getItem("personal_email") || "amit.deshmukh@fieldops.com");
-    setAddress(localStorage.getItem("personal_address") || "102, Sai Residency, Baner Road, Pune - 411045, Maharashtra, India");
-    setIsEditingPersonal(false);
+    setFullName(profile?.displayName || ""); setDob(""); setGender(""); setMobile(agent?.phone || ""); setEmail(profile?.email || ""); setAddress(agent ? agent.city + ", " + agent.state : ""); setIsEditingPersonal(false);
   };
 
-  const handleSaveEmergency = () => {
-    localStorage.setItem("personal_emergencyName", emergencyName);
-    localStorage.setItem("personal_emergencyPhone", emergencyPhone);
-    localStorage.setItem("personal_emergencyRelation", emergencyRelation);
-    setIsEditingEmergency(false);
-  };
+  const handleSaveEmergency = () => setIsEditingEmergency(false);
 
-  const handleCancelEmergency = () => {
-    setEmergencyName(localStorage.getItem("personal_emergencyName") || "Rohini Deshmukh");
-    setEmergencyPhone(localStorage.getItem("personal_emergencyPhone") || "+91 91234 56789");
-    setEmergencyRelation(localStorage.getItem("personal_emergencyRelation") || "Spouse");
-    setIsEditingEmergency(false);
-  };
+  const handleCancelEmergency = () => { setEmergencyName(""); setEmergencyPhone(""); setEmergencyRelation(""); setIsEditingEmergency(false); };
   return (
     <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden animate-slide-up">
       <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-20 justify-start relative overflow-hidden">
@@ -504,13 +479,6 @@ export function AgentPersonalInfo({ onBack, onNavigate }: AgentPersonalInfoProps
           >
             <NavIcon type="tasks" />
             <span className="text-[10px] font-medium leading-none">My Tasks</span>
-          </button>
-          
-          <button onClick={() => onNavigate?.("add-task")} type="button" className="flex flex-1 flex-col items-center justify-end relative h-full pb-1 text-[#70798d]">
-            <span className="absolute -top-5 grid h-12 w-12 place-items-center rounded-full bg-[#1158d4] text-white shadow-[0_6px_14px_rgba(19,91,215,0.3)] hover:scale-105 transition-transform duration-200 cursor-pointer">
-              <PlusIcon />
-            </span>
-            <span className="text-[10px] font-medium leading-none mt-auto">Add Task</span>
           </button>
           
           <button onClick={() => onNavigate?.("history")} type="button" className="flex flex-1 flex-col items-center justify-center gap-1 text-[#70798d] hover:text-[#1158d4] cursor-pointer bg-transparent border-0">

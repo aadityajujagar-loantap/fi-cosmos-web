@@ -7,7 +7,6 @@ import { AgentHelpSupport } from "./features/agent/pages/AgentHelpSupport";
 import { AgentAbout } from "./features/agent/pages/AgentAbout";
 import { AgentLocationMap } from "./features/agent/pages/AgentLocationMap";
 import { AgentLogin } from "./features/agent/pages/AgentLogin";
-import { AgentOtp } from "./features/agent/pages/AgentOtp";
 import { AgentMyTasks } from "./features/agent/pages/AgentMyTasks";
 import { AgentProfile } from "./features/agent/pages/AgentProfile";
 import { AgentNotifications } from "./features/agent/pages/AgentNotifications";
@@ -24,49 +23,25 @@ import { AgentCaptureDocs } from "./features/agent/pages/AgentCaptureDocs";
 import { AgentCapturePhoto } from "./features/agent/pages/AgentCapturePhoto";
 import { AgentCustomerSignature } from "./features/agent/pages/AgentCustomerSignature";
 import { AdminPortal } from "./features/admin/pages/AdminPortal";
-import { Popup } from "./components/ui/Popup";
-import { verifyMobileNumber, verifyOtpCode } from "./services/auth";
 import type { Step } from "./types";
 import { I18nProvider } from "./features/agent/i18n";
+import { AgentLocationProvider } from "./features/agent/location/AgentLocationProvider";
 
 import { useNetworkStatus } from "./native/network";
+import { investigationService } from "./data/services";
+import { useAuth } from "./auth/authContext";
+import { useAppData } from "./data/dataContext";
+import { getActiveAgentTaskId } from "./features/agent/utils/tasks";
 
 function AgentApp() {
   const { isOffline } = useNetworkStatus();
-  const [step, setStep] = useState<Step>(() => {
-    return (localStorage.getItem("isLoggedIn") === "true" ? "home" : "login") as Step;
-  });
+  const { signOut } = useAuth();
+  const [step, setStep] = useState<Step>("home");
   const [historyStack, setHistoryStack] = useState<Step[]>([]);
-  const [mobileNumber, setMobileNumber] = useState(() => {
-    return localStorage.getItem("mobileNumber") || "";
-  });
-  const [popup, setPopup] = useState("");
-  // Start with 2 completed steps: Visit Location and Capture Photo (as in mockups)
-  const [completedStepsCount, setCompletedStepsCount] = useState(2);
-
-  const showPopup = (message: string) => {
-    setPopup(message);
-    window.setTimeout(() => setPopup(""), 2600);
-  };
-
-  const handleSendOtp = (num: string) => {
-    if (!verifyMobileNumber(num)) {
-      showPopup("Invalid mobile number");
-      return;
-    }
-    setMobileNumber(num);
-    setStep("otp");
-  };
-
-  const handleVerifyOtp = (code: string) => {
-    if (!verifyOtpCode(code)) {
-      showPopup("Invalid OTP");
-      return;
-    }
-    localStorage.setItem("isLoggedIn", "true");
-    localStorage.setItem("mobileNumber", mobileNumber);
-    setStep("home");
-  };
+  const [completedStepsByTask, setCompletedStepsByTask] = useState<Record<string, number>>({});
+  const activeTaskId = getActiveAgentTaskId();
+  const completedStepsCount = completedStepsByTask[activeTaskId] ?? investigationService.getDraft(activeTaskId).completedChecklistIds.length;
+  const setCompletedStepsCount = (count: number) => setCompletedStepsByTask((current) => ({ ...current, [getActiveAgentTaskId()]: count }));
 
   const navigateTo = (nextStep: Step) => {
     if (nextStep === step) return;
@@ -80,15 +55,11 @@ function AgentApp() {
     setStep(previousStep);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("isLoggedIn");
-    localStorage.removeItem("mobileNumber");
-    setHistoryStack([]);
-    setStep("login");
-  };
+  const handleLogout = () => { void signOut(); };
 
   return (
     <I18nProvider>
+      <AgentLocationProvider>
       <MobileWrapper>
         {isOffline ? (
           <div className="bg-[#ee0f1a] text-white py-1.5 px-4 text-[10px] font-bold text-center flex items-center justify-center gap-1.5 shrink-0 z-50 select-none shadow-sm animate-pulse">
@@ -97,22 +68,7 @@ function AgentApp() {
             </svg>
             <span>No internet connection. Some actions may be unavailable.</span>
           </div>
-        ) : null}
-        {popup ? <Popup message={popup} /> : null}
-      
-        {step === "login" ? (
-          <AgentLogin onSendOtp={handleSendOtp} />
-        ) : null}
-
-      {step === "otp" ? (
-        <AgentOtp
-          mobileNumber={mobileNumber}
-          onVerifyOtp={handleVerifyOtp}
-          onBack={() => setStep("login")}
-        />
-      ) : null}
-
-      {step === "home" ? (
+        ) : null}{step === "home" ? (
         <AgentHome
           onNavigate={navigateTo}
         />
@@ -262,21 +218,24 @@ function AgentApp() {
           />
         ) : null}
       </MobileWrapper>
+      </AgentLocationProvider>
     </I18nProvider>
   );
 }
 
 export default function App() {
+  const { loading: authLoading, profile, signInWithPhone, signOut } = useAuth();
+  const { loading: dataLoading, error } = useAppData();
   const pathname = window.location.pathname.toLowerCase();
+  const isAgent = pathname === "/agent" || pathname.startsWith("/agent/") || window.location.search.includes("mode=agent") || window.location.href.includes("android_asset");
 
-  // Strictly determine if we render the agent mobile module
-  const isAgent = pathname.startsWith("/agent") || 
-                  window.location.search.includes("mode=agent") || 
-                  window.location.href.includes("android_asset");
-
+  if (authLoading) return <main className="grid min-h-[100dvh] place-items-center text-sm font-bold text-[#1158d4]">Checking session...</main>;
   if (isAgent) {
+    if (!profile) return <AgentLogin onLogin={signInWithPhone} />;
+    if (profile.role !== "AGENT") return <main className="grid min-h-[100dvh] place-items-center p-6 text-center"><div><h1 className="text-xl font-bold text-[#07183f]">Field Agent access required</h1><p className="mt-2 text-sm text-[#5c6a85]">This application is for Field Agents only.</p><button onClick={() => { void signOut(); }} className="mt-5 rounded-xl bg-[#1158d4] px-5 py-3 text-sm font-bold text-white">Sign out</button></div></main>;
+    if (dataLoading) return <main className="grid min-h-[100dvh] place-items-center text-sm font-bold text-[#1158d4]">Syncing assignments...</main>;
+    if (error) return <main className="grid min-h-[100dvh] place-items-center p-6 text-center text-sm font-bold text-[#c62828]">{error}</main>;
     return <AgentApp />;
   }
-
   return <AdminPortal />;
 }

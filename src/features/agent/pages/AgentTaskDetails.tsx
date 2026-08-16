@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useAppData } from "../../../data/dataContext";
+import { useAgentLocation } from "../location/agentLocationContext";
 import type { Step } from "../../../types";
-import { getActiveAgentTask, isTerminalStatus, updateAgentTask, type AgentTaskRecord } from "../utils/tasks";
+import { getActiveAgentTask, isTerminalStatus, toAgentTask, updateAgentTask } from "../utils/tasks";
 import { generateTaskPdf } from "../utils/pdfGenerator";
 
 interface DetailItemProps {
@@ -37,13 +39,19 @@ interface AgentTaskDetailsProps {
 }
 
 export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) {
-  const [task, setTask] = useState<AgentTaskRecord>(() => getActiveAgentTask());
-  const [isAccepted, setIsAccepted] = useState(() => task.status === "In Progress" || task.status === "Completed");
+  const { state } = useAppData();
+  const { coordinates: agentLocation } = useAgentLocation();
+  const [taskId] = useState(() => getActiveAgentTask(agentLocation).id);
+  const task = useMemo(() => {
+    const current = state.tasks.find((item) => item.id === taskId);
+    return current ? toAgentTask(current, agentLocation) : getActiveAgentTask(agentLocation);
+  }, [agentLocation, state.tasks, taskId]);
+  const isAccepted = ["Accepted", "In Progress", "Rework Required"].includes(task.status);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectReason, setRejectReason] = useState("Out of Area");
   const [customReason, setCustomReason] = useState("");
   const [popupMsg, setPopupMsg] = useState("");
-  const isClosed = isTerminalStatus(task.status);
+  const isClosed = isTerminalStatus(task.status) || task.status === "Submitted";
   const priorityClass =
     task.priority === "LOW"
       ? "bg-[#f0fff4] text-[#088d27]"
@@ -57,22 +65,23 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
     setTimeout(() => setPopupMsg(""), 2000);
   };
 
-  const handleAccept = () => {
-    const updated = updateAgentTask(task.id, { action: "filled", status: "In Progress" });
-    if (updated) setTask(updated);
-    setIsAccepted(true);
+  const handleAccept = async () => {
+    await updateAgentTask(task.id, { action: "filled", status: "Accepted" });
     triggerPopup("Case accepted successfully!");
   };
 
-  const handleRejectConfirm = () => {
+  const handleStart = async () => {
+    await updateAgentTask(task.id, { action: "filled", status: "In Progress" });
+    onNavigate?.("task-in-progress");
+  };
+
+  const handleRejectConfirm = async () => {
     const reason = rejectReason === "Other Reason" ? customReason.trim() || "Other Reason" : rejectReason;
-    const updated = updateAgentTask(task.id, {
+    await updateAgentTask(task.id, {
       action: "outline",
       rejectReason: `Reason: ${reason}.`,
       status: "Rejected",
     });
-    if (updated) setTask(updated);
-    setIsAccepted(false);
     setShowRejectModal(false);
     triggerPopup("Case rejected successfully.");
     setTimeout(() => {
@@ -280,23 +289,25 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
           <div className="border border-[#edf1f5] rounded-[18px] bg-white shadow-sm p-4 flex flex-col w-full flex-none text-left">
             <div className="flex items-center justify-between w-full border-b border-[#edf1f5] pb-3 mb-2">
               <h3 className="text-xs font-bold text-[#07183f]">Required Checklist</h3>
-              <span className="text-[10px] font-bold text-[#8f98a8]">{task.status === "Completed" ? task.checklist.length : 0}/{task.checklist.length} Completed</span>
+              <span className="text-[10px] font-bold text-[#8f98a8]">{(task.status === "Completed" || task.status === "Submitted") ? task.checklist.length : 0}/{task.checklist.length} Completed</span>
             </div>
             
             <div className="flex flex-col">
               {task.checklist.map((step, idx) => (
                 <div key={step} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-b-0 text-xs">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-4 h-4 rounded-full flex-none ${task.status === "Completed" ? "bg-[#ecfaef] border border-[#088d27]" : "border border-slate-300"}`} />
+                  <div className="flex items-start gap-3">
+                    <div className={`w-4 h-4 rounded-full flex-none ${(task.status === "Completed" || task.status === "Submitted") ? "bg-[#ecfaef] border border-[#088d27]" : "border border-slate-300"}`} />
                     <span className="font-bold text-[#5c6a85]">{idx + 1}. {step}</span>
                   </div>
                   <span className="bg-[#edf2f7] text-[#5c6a85] font-bold text-[9px] px-2 py-0.5 rounded-full">
-                    {task.status === "Completed" ? "Done" : "Pending"}
+                    {(task.status === "Completed" || task.status === "Submitted") ? "Done" : "Pending"}
                   </span>
                 </div>
               ))}
             </div>
           </div>
+
+          {task.reworkReason ? <div className="rounded-[18px] border border-[#fde2b8] bg-[#fff8eb] p-4 text-left"><p className="text-[10px] font-bold uppercase text-[#b77900]">Admin Rework Request</p><p className="mt-1 text-xs font-bold leading-relaxed text-[#07183f]">{task.reworkReason}</p></div> : null}
 
         </div>
 
@@ -311,7 +322,7 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
               >
                 Back to Tasks
               </button>
-              {task.status === "Completed" && (
+              {(task.status === "Completed" || task.status === "Submitted") && (
                 <button
                   onClick={() => generateTaskPdf(task)}
                   type="button"
@@ -326,7 +337,7 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
             </div>
           ) : isAccepted ? (
             <button
-              onClick={() => onNavigate?.("task-in-progress")}
+              onClick={handleStart}
               type="button"
               className="w-full bg-[#1158d4] text-white hover:bg-[#0f4ebc] h-12 rounded-[14px] font-bold text-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg hover:scale-[1.01] active:scale-[0.99] transition-transform border-0"
             >
@@ -335,7 +346,7 @@ export function AgentTaskDetails({ onBack, onNavigate }: AgentTaskDetailsProps) 
                   <path d="M8 5v14l11-7z" />
                 </svg>
               </div>
-              <span>Start Task</span>
+              <span>{task.status === "Rework Required" ? "Start Rework" : task.status === "In Progress" ? "Continue Task" : "Start Task"}</span>
             </button>
           ) : (
             <>

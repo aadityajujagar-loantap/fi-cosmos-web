@@ -1,13 +1,15 @@
 import { useMemo, useState } from "react";
+import { useAppData } from "../../../data/dataContext";
+import { useAgentLocation } from "../location/agentLocationContext";
 import type { Step } from "../../../types";
-import { loadAgentTasks, setActiveAgentTaskId, type AgentTaskRecord } from "../utils/tasks";
+import { loadAgentTasks, setActiveAgentTaskId, toAgentTasks, type AgentTaskRecord } from "../utils/tasks";
 import { generateTaskPdf, generateCombinedReport } from "../utils/pdfGenerator";
 
 interface HistoryTask {
   id: string;
   title: string;
   type: "search" | "document" | "id" | "scale" | "folder";
-  status: "COMPLETED" | "IN PROGRESS" | "PENDING" | "REJECTED" | "CANCELLED";
+  status: "COMPLETED" | "IN PROGRESS" | "PENDING" | "SUBMITTED" | "REWORK REQUIRED" | "REJECTED" | "CANCELLED";
   location: string;
   distance: string;
   date: string;
@@ -29,7 +31,9 @@ function historyStatus(task: AgentTaskRecord): HistoryTask["status"] {
   if (task.status === "Completed") return "COMPLETED";
   if (task.status === "Rejected") return "REJECTED";
   if (task.status === "Cancelled") return "CANCELLED";
-  if (task.status === "Pending") return "PENDING";
+  if (task.status === "Assigned" || task.status === "Accepted") return "PENDING";
+  if (task.status === "Submitted") return "SUBMITTED";
+  if (task.status === "Rework Required") return "REWORK REQUIRED";
   return "IN PROGRESS";
 }
 
@@ -133,13 +137,7 @@ function TaskTypeIcon({ type }: { type: HistoryTask["type"] }) {
   );
 }
 
-function PlusIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.5" aria-hidden="true">
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
+
 
 function NavIcon({ type }: { type: "home" | "tasks" | "history" | "profile" }) {
   if (type === "tasks") {
@@ -181,11 +179,13 @@ interface AgentHistoryProps {
 }
 
 export function AgentHistory({ onNavigate }: AgentHistoryProps) {
+  const { state } = useAppData();
+  const { coordinates: agentLocation } = useAgentLocation();
   const [activeTab, setActiveTab] = useState<"all" | "completed" | "rejected" | "cancelled">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [dateFilter, setDateFilter] = useState<"all" | "today" | "older">("all");
-  const historyTasks = useMemo(() => loadAgentTasks().map(toHistoryTask), []);
+  const historyTasks = useMemo(() => toAgentTasks(state.tasks, agentLocation).map(toHistoryTask), [agentLocation, state.tasks]);
 
   const filteredTasks = historyTasks.filter((task) => {
     // Filter by Tab
@@ -471,13 +471,6 @@ export function AgentHistory({ onNavigate }: AgentHistoryProps) {
           >
             <NavIcon type="tasks" />
             <span className="text-[10px] font-medium leading-none">My Tasks</span>
-          </button>
-          
-          <button onClick={() => onNavigate?.("add-task")} type="button" className="flex flex-1 flex-col items-center justify-end relative h-full pb-1 text-[#70798d]">
-            <span className="absolute -top-5 grid h-12 w-12 place-items-center rounded-full bg-[#1158d4] text-white shadow-[0_6px_14px_rgba(19,91,215,0.3)] hover:scale-105 transition-transform duration-200 cursor-pointer">
-              <PlusIcon />
-            </span>
-            <span className="text-[10px] font-medium leading-none mt-auto">Add Task</span>
           </button>
           
           <button

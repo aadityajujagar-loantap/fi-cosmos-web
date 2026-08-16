@@ -1,4 +1,6 @@
-import { useRef, useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { investigationService } from "../../../data/services";
+import { useAppData } from "../../../data/dataContext";
 import type { Step } from "../../../types";
 import {
   addCapturedAsset,
@@ -7,8 +9,9 @@ import {
   loadCapturedAssets,
   type CapturedAsset,
 } from "../utils/media";
-import { completeActiveAgentTask, getActiveAgentTask } from "../utils/tasks";
+import { getActiveAgentTask } from "../utils/tasks";
 import { generateTaskPdf } from "../utils/pdfGenerator";
+import { AssignedQuestionnaire } from "../components/AssignedQuestionnaire";
 
 interface AgentUpdateChecklistProps {
   onBack: () => void;
@@ -20,215 +23,181 @@ interface AgentUpdateChecklistProps {
 export function AgentUpdateChecklist({
   onBack,
   onNavigate,
-  completedStepsCount = 2,
+  completedStepsCount = 0,
   setCompletedStepsCount
 }: AgentUpdateChecklistProps) {
+  const { agentActor, state } = useAppData();
   const [task] = useState(() => getActiveAgentTask());
+  const [initialDraft] = useState(() => investigationService.getDraft(task.id));
+  const assignedTask = state.tasks.find((item) => item.id === task.id);
+  const questionnaire = assignedTask?.questionnaire ?? [];
+  const [questionnaireAnswers, setQuestionnaireAnswers] = useState(() => ({ ...initialDraft.questionnaireAnswers }));
   const [initialUploadedProof] = useState<CapturedAsset | null>(
     () => loadCapturedAssets(task.id, "document").find((asset) => asset.slot === "address-verification") || null,
   );
-  const [initialVoiceFile] = useState<CapturedAsset | null>(() => loadCapturedAssets(task.id, "voice")[0] || null);
-  const [notes, setNotes] = useState("");
-  const [step3Completed, setStep3Completed] = useState(
-    () => completedStepsCount >= 3 || Boolean(initialUploadedProof) || Boolean(initialVoiceFile),
-  );
+  const [notes, setNotes] = useState(initialDraft.remarks);
   const [uploadedProof, setUploadedProof] = useState<CapturedAsset | null>(initialUploadedProof);
   const [proofError, setProofError] = useState("");
   const [photoCount] = useState(() => loadCapturedAssets(task.id, "photo").length);
   const [documentCount] = useState(() => loadCapturedAssets(task.id, "document").length);
   const [signatureCount] = useState(() => loadCapturedAssets(task.id, "signature").length);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const [submissionError, setSubmissionError] = useState("");
 
-  // Questionnaire state variables
-  const [residesVerified, setResidesVerified] = useState<string | null>(null);
-  const [homeOwnership, setHomeOwnership] = useState("Owned");
-  const [stayDuration, setStayDuration] = useState("1-3 Years");
-
-  // Voice recording state variables
-  const [isRecording, setIsRecording] = useState(false);
-  const [recordingSeconds, setRecordingSeconds] = useState(0);
-  const [voiceFile, setVoiceFile] = useState<CapturedAsset | null>(initialVoiceFile);
-  const [voiceError, setVoiceError] = useState("");
-  const [isPlayingVoice, setIsPlayingVoice] = useState(false);
-  const [playbackProgress, setPlaybackProgress] = useState(0);
-
-  // Recording Timer
-  useEffect(() => {
-    if (!isRecording) return;
-    const timer = window.setInterval(() => {
-      setRecordingSeconds((prev) => prev + 1);
-    }, 1000);
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [isRecording]);
-
-  const formatDuration = (seconds = 0) => {
-    const safeSeconds = Math.max(0, Math.floor(seconds));
-    return `${Math.floor(safeSeconds / 60)}:${String(safeSeconds % 60).padStart(2, "0")}`;
+  const answerText = (term: string) => {
+    const question = questionnaire.find((item) => item.prompt.toLowerCase().includes(term));
+    const answer = question ? questionnaireAnswers[question.id] : undefined;
+    return typeof answer === "string" ? answer : "";
   };
+  const residesVerified = answerText("reside") || answerText("met") || answerText("exist") || initialDraft.residesVerified;
+  const homeOwnership = answerText("ownership") || initialDraft.homeOwnership;
+  const stayDuration = answerText("how long") || initialDraft.stayDuration;
+  const questionnaireComplete = questionnaire.length > 0 && questionnaire
+    .filter((question) => question.required)
+    .every((question) => {
+      const answer = questionnaireAnswers[question.id];
+      return Array.isArray(answer) ? answer.length > 0 : typeof answer === "string" && answer.trim().length > 0;
+    });
 
-  const createSampleVoiceBlob = (durationSeconds = 2) => {
-    const sampleRate = 8000;
-    const sampleCount = sampleRate * durationSeconds;
-    const buffer = new ArrayBuffer(44 + sampleCount * 2);
-    const view = new DataView(buffer);
-    const writeString = (offset: number, value: string) => {
-      for (let index = 0; index < value.length; index += 1) {
-        view.setUint8(offset + index, value.charCodeAt(index));
-      }
-    };
+  // Camera states for Step 3
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("environment");
+  const [cameraStatus, setCameraStatus] = useState<"starting" | "ready" | "blocked" | "unsupported">("starting");
+  const [isSaving, setIsSaving] = useState(false);
 
-    writeString(0, "RIFF");
-    view.setUint32(4, 36 + sampleCount * 2, true);
-    writeString(8, "WAVE");
-    writeString(12, "fmt ");
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, 1, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * 2, true);
-    view.setUint16(32, 2, true);
-    view.setUint16(34, 16, true);
-    writeString(36, "data");
-    view.setUint32(40, sampleCount * 2, true);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
-    for (let index = 0; index < sampleCount; index += 1) {
-      const fade = Math.min(1, index / 800, (sampleCount - index) / 800);
-      const value = Math.sin((2 * Math.PI * 440 * index) / sampleRate) * 0.16 * fade;
-      view.setInt16(44 + index * 2, value * 32767, true);
-    }
+  const stopInlineCamera = useCallback(() => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+    setCameraActive(false);
+  }, []);
 
-    return new Blob([buffer], { type: "audio/wav" });
-  };
-
-  const handleSampleVoice = async (durationSeconds = 2) => {
-    setVoiceError("");
-    setPlaybackProgress(0);
-    setIsPlayingVoice(false);
-    audioRef.current?.pause();
-
-    try {
-      const asset = await addCapturedBlob(createSampleVoiceBlob(durationSeconds), {
-        duration: durationSeconds,
-        kind: "voice",
-        mimeType: "audio/wav",
-        name: `dummy_voice_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.wav`,
-        slot: "voice-remarks",
-        taskId: task.id,
-      });
-      setVoiceFile(asset);
-      setStep3Completed(true);
-      if (setCompletedStepsCount && completedStepsCount < 3) {
-        setCompletedStepsCount(3);
-      }
-    } catch (err) {
-      setVoiceError(err instanceof Error ? err.message : "Unable to save dummy voice remark.");
-    }
-  };
-
-
-
-  const handleSampleProof = async () => {
+  const startInlineCamera = useCallback(async () => {
     setProofError("");
-    const svg = `
-      <svg xmlns="http://www.w3.org/2000/svg" width="900" height="620" viewBox="0 0 900 620">
-        <rect width="900" height="620" rx="28" fill="#f8fafc"/>
-        <rect x="58" y="62" width="784" height="496" rx="18" fill="#fff" stroke="#d8e0eb" stroke-width="6"/>
-        <rect x="98" y="112" width="260" height="34" rx="10" fill="#1158d4"/>
-        <rect x="98" y="190" width="570" height="24" rx="8" fill="#cbd5e1"/>
-        <rect x="98" y="240" width="650" height="22" rx="8" fill="#e2e8f0"/>
-        <rect x="98" y="290" width="610" height="22" rx="8" fill="#e2e8f0"/>
-        <rect x="98" y="390" width="360" height="88" rx="14" fill="#edf5ff" stroke="#1158d4" stroke-width="3"/>
-        <text x="120" y="445" fill="#1158d4" font-family="Arial, sans-serif" font-size="34" font-weight="700">Sample Address Proof</text>
-      </svg>
-    `;
+    setCameraActive(true);
+    setCameraStatus("starting");
 
-    try {
-      const asset = await addCapturedBlob(new Blob([svg], { type: "image/svg+xml" }), {
-        kind: "document",
-        mimeType: "image/svg+xml",
-        name: "sample-address-proof.svg",
-        slot: "address-verification",
-        taskId: task.id,
-      });
-      setUploadedProof(asset);
-      setStep3Completed(true);
-      if (setCompletedStepsCount && completedStepsCount < 3) {
-        setCompletedStepsCount(3);
-      }
-    } catch (err) {
-      setProofError(err instanceof Error ? err.message : "Unable to save sample proof.");
-    }
-  };
-
-  const handleStartRecord = () => {
-    setVoiceError("");
-    setPlaybackProgress(0);
-    setIsPlayingVoice(false);
-    audioRef.current?.pause();
-    setVoiceFile(null);
-    setRecordingSeconds(0);
-
-    setIsRecording(true);
-  };
-
-  const handleStopRecord = () => {
-    setIsRecording(false);
-    void handleSampleVoice(Math.max(recordingSeconds, 2));
-  };
-
-  const handleDeleteVoice = () => {
-    if (voiceFile) {
-      deleteCapturedAsset(voiceFile.id, task.id);
-    }
-    audioRef.current?.pause();
-    setVoiceFile(null);
-    setIsPlayingVoice(false);
-    setPlaybackProgress(0);
-  };
-
-  const handleVoicePlayToggle = async () => {
-    const audio = audioRef.current;
-    if (!audio || !voiceFile) return;
-
-    setVoiceError("");
-    if (isPlayingVoice) {
-      audio.pause();
-      setIsPlayingVoice(false);
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraStatus("unsupported");
+      setProofError("Inline camera not supported on this browser.");
       return;
     }
 
     try {
-      if (audio.ended) audio.currentTime = 0;
-      await audio.play();
-      setIsPlayingVoice(true);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: cameraFacing },
+          height: { ideal: 960 },
+          width: { ideal: 1280 },
+        },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setCameraStatus("ready");
     } catch {
-      setVoiceError("Unable to play recording.");
+      setCameraStatus("blocked");
+      setProofError("Unable to access camera.");
+    }
+  }, [cameraFacing]);
+
+  // Restart camera if facing changes
+  useEffect(() => {
+    if (cameraActive) {
+      void startInlineCamera();
+    }
+  }, [cameraFacing, startInlineCamera]);
+
+  // Cleanup stream on unmount
+  useEffect(() => {
+    return () => {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
+
+  const captureInlineProof = async () => {
+    const video = videoRef.current;
+    if (!video || cameraStatus !== "ready" || !video.videoWidth || !video.videoHeight) {
+      return;
+    }
+
+    setIsSaving(true);
+    setProofError("");
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Unable to capture proof photo.");
+
+      if (cameraFacing === "user") {
+        context.translate(canvas.width, 0);
+        context.scale(-1, 1);
+      }
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((nextBlob) => {
+          if (nextBlob) resolve(nextBlob);
+          else reject(new Error("Unable to save captured proof."));
+        }, "image/jpeg", 0.92);
+      });
+
+      const asset = await addCapturedBlob(blob, {
+        kind: "document",
+        mimeType: "image/jpeg",
+        name: `address_proof_${Date.now()}.jpg`,
+        slot: "address-verification",
+        taskId: task.id,
+      });
+      setUploadedProof(asset);
+      stopInlineCamera();
+    } catch (caught) {
+      setProofError(caught instanceof Error ? caught.message : "Unable to save captured proof.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  const handleAudioTimeUpdate = () => {
-    const audio = audioRef.current;
-    if (!audio?.duration) return;
-    setPlaybackProgress((audio.currentTime / audio.duration) * 100);
-  };
+  // Step 1 manual visit verification state
+  const [visitVerified, setVisitVerified] = useState(() => initialDraft.completedChecklistIds.includes("visit-location"));
 
-  const handleAudioEnded = () => {
-    setIsPlayingVoice(false);
-    setPlaybackProgress(0);
-  };
+  // Accordion expanded state (Step 1 open by default if not verified, else Step 3)
+  const [expandedStep, setExpandedStep] = useState<number | null>(() => 
+    initialDraft.completedChecklistIds.includes("visit-location") ? 3 : 1
+  );
 
-  // Derive completed percentage
+  // Dynamically derive step completions sequentially (Step N is only completed if Step N-1 is completed)
+  const step1Completed = visitVerified;
+  const step2Completed = step1Completed && (photoCount > 0 || (completedStepsCount ?? 0) >= 2);
+  const step3Completed = step2Completed && questionnaireComplete && notes.trim().length >= 5;
+  const step4Completed = step3Completed && (documentCount > 0 || (completedStepsCount ?? 0) >= 4);
+  const step5Completed = step4Completed && (signatureCount > 0 || (completedStepsCount ?? 0) >= 5);
+
+  const step2Enabled = step1Completed;
+  const step3Enabled = step2Completed;
+  const step4Enabled = step3Completed;
+  const step5Enabled = step4Completed;
+
   const completedCount =
-    (completedStepsCount >= 1 ? 1 : 0) +
-    (completedStepsCount >= 2 ? 1 : 0) +
+    (step1Completed ? 1 : 0) +
+    (step2Completed ? 1 : 0) +
     (step3Completed ? 1 : 0) +
-    (completedStepsCount >= 4 ? 1 : 0) +
-    (completedStepsCount >= 5 ? 1 : 0);
+    (step4Completed ? 1 : 0) +
+    (step5Completed ? 1 : 0);
 
   const progressPercent = Math.round((completedCount / 5) * 100);
+
+  // Sync back to parent context
+  useEffect(() => {
+    setCompletedStepsCount?.(completedCount);
+  }, [completedCount, setCompletedStepsCount]);
 
   const handleProofFile = async (fileList: FileList | null, resetInput?: () => void) => {
     const file = fileList?.[0];
@@ -238,10 +207,6 @@ export function AgentUpdateChecklist({
       const asset = await addCapturedAsset(file, { kind: "document", slot: "address-verification", taskId: task.id });
       setUploadedProof(asset);
       setProofError("");
-      setStep3Completed(true);
-      if (setCompletedStepsCount && completedStepsCount < 3) {
-        setCompletedStepsCount(3);
-      }
     } catch (err) {
       setProofError(err instanceof Error ? err.message : "Unable to save proof.");
     } finally {
@@ -249,12 +214,79 @@ export function AgentUpdateChecklist({
     }
   };
 
-  const handleSaveAndContinue = () => {
-    if (completedStepsCount < 5) {
-      onBack();
-    } else {
-      completeActiveAgentTask();
+
+
+  const buildDraft = () => ({
+    taskId: task.id,
+    residesVerified: residesVerified ?? "",
+    homeOwnership,
+    stayDuration,
+    remarks: notes.trim(),
+    questionnaireAnswers,
+    completedChecklistIds: [
+      step1Completed ? "visit-location" : null,
+      step2Completed ? "capture-photo" : null,
+      step3Completed ? "verify-address" : null,
+      step4Completed ? "capture-documents" : null,
+      step5Completed ? "customer-signature" : null,
+    ].filter((value): value is string => Boolean(value)),
+    evidenceIds: loadCapturedAssets(task.id).map((asset) => asset.id),
+    updatedAt: new Date().toISOString(),
+  });
+
+  useEffect(() => {
+    if (showSuccessModal) return;
+    const timer = window.setTimeout(() => {
+      try {
+        void investigationService.saveDraft(
+          { id: agentActor.id, role: "AGENT" },
+          task.id,
+          {
+            residesVerified: residesVerified ?? "",
+            homeOwnership,
+            stayDuration,
+            remarks: notes.trim(),
+            questionnaireAnswers,
+            completedChecklistIds: [
+              step1Completed ? "visit-location" : null,
+              step2Completed ? "capture-photo" : null,
+              step3Completed ? "verify-address" : null,
+              step4Completed ? "capture-documents" : null,
+              step5Completed ? "customer-signature" : null,
+            ].filter((value): value is string => Boolean(value)),
+            evidenceIds: loadCapturedAssets(task.id).map((asset) => asset.id),
+          },
+        );
+      } catch {
+        // A status change can make the draft read-only while this screen closes.
+      }
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [agentActor.id, step1Completed, step2Completed, step3Completed, step4Completed, step5Completed, homeOwnership, notes, questionnaireAnswers, residesVerified, showSuccessModal, stayDuration, task.id]);
+
+  const handleSaveAndContinue = async () => {
+    const actor = agentActor;
+    const draft = buildDraft();
+    try {
+      await investigationService.saveDraft(actor, task.id, draft);
+      if (completedCount < 5) {
+        setSubmissionError("");
+        onBack();
+        return;
+      }
+      const missing: string[] = [];
+      if (!questionnaireComplete) missing.push("required product questionnaire answers");
+      if (!notes.trim() || notes.trim().length < 5) missing.push("textual remarks (minimum 5 characters)");
+      if (!uploadedProof) missing.push("address proof");
+      if (!photoCount) missing.push("customer photo");
+      if (!documentCount) missing.push("supporting document");
+      if (!signatureCount) missing.push("customer signature");
+      if (missing.length) throw new Error(`Complete required items: ${missing.join(", ")}.`);
+      await investigationService.submit(actor, task.id, investigationService.getDraft(task.id));
+      setSubmissionError("");
       setShowSuccessModal(true);
+    } catch (caught) {
+      setSubmissionError(caught instanceof Error ? caught.message : "Investigation could not be saved.");
     }
   };
 
@@ -316,356 +348,399 @@ export function AgentUpdateChecklist({
 
             {/* Step 1: Visit Location */}
             <div className="border border-[#edf1f5] rounded-[18px] bg-white shadow-sm overflow-hidden flex flex-col z-10 text-left">
-              <div className="flex items-center justify-between p-4 cursor-pointer">
+              <div
+                onClick={() => setExpandedStep((prev) => prev === 1 ? null : 1)}
+                className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50/50"
+              >
                 <div className="flex items-center gap-3.5">
-                  <div className="w-5 h-5 rounded-full bg-[#ecfaef] text-[#088d27] flex items-center justify-center flex-none">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-3.5 h-3.5">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-none font-bold text-[10px] ${
+                    step1Completed ? "bg-[#ecfaef] text-[#088d27]" : "border border-slate-300 text-[#5c6a85]"
+                  }`}>
+                    {step1Completed ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-3.5 h-3.5">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    ) : (
+                      "1"
+                    )}
                   </div>
                   <span className="text-xs font-bold text-[#07183f]">1. Visit Customer Location</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="bg-[#ecfaef] text-[#088d27] font-bold text-[9px] px-2 py-0.5 rounded-full">
-                    Completed
+                  <span className={`font-bold text-[9px] px-2 py-0.5 rounded-full ${
+                    step1Completed ? "bg-[#ecfaef] text-[#088d27]" : "bg-[#edf2f7] text-[#5c6a85]"
+                  }`}>
+                    {step1Completed ? "Completed" : "Pending"}
                   </span>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 text-[#088d27]">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedStep === 1 ? "rotate-180 text-[#1158d4]" : "text-slate-400"}`}>
                     <path d="m6 9 6 6 6-6" />
                   </svg>
                 </div>
               </div>
-              <div className="px-4 pb-4 pl-12 flex flex-col gap-2.5 text-xs text-[#5c6a85] border-t border-slate-50 pt-3">
-                <div className="flex items-center gap-2">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 text-slate-400">
-                    <rect x="3" y="4" width="18" height="18" rx="2" />
-                    <line x1="16" y1="2" x2="16" y2="6" />
-                    <line x1="8" y1="2" x2="8" y2="6" />
-                    <line x1="3" y1="10" x2="21" y2="10" />
-                  </svg>
-                  <span>Completed at 10:25 AM, 16 May 2025</span>
+              {expandedStep === 1 && (
+                <div className="px-4 pb-4 pl-12 flex flex-col gap-2.5 text-xs text-[#5c6a85] border-t border-slate-50 pt-3 bg-white">
+                  <div className="flex items-center gap-2">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 text-slate-400">
+                      <rect x="3" y="4" width="18" height="18" rx="2" />
+                      <line x1="16" y1="2" x2="16" y2="6" />
+                      <line x1="8" y1="2" x2="8" y2="6" />
+                      <line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                    <span>{step1Completed ? "Completed at 10:25 AM, 16 May 2025" : "Check-in verified"}</span>
+                  </div>
+                  <div className="flex flex-col gap-3">
+                    <span className="leading-relaxed">
+                      {step1Completed 
+                        ? "Visited the location and verified the address coordinates." 
+                        : task.status === "In Progress"
+                          ? "You have checked in. Please click the button below to verify the customer location visit."
+                          : "Please check in at the customer's location first on the task panel to unlock verification."}
+                    </span>
+                    {!step1Completed && task.status === "In Progress" && (
+                      <button
+                        onClick={() => {
+                          setVisitVerified(true);
+                          setExpandedStep(2); // Auto-expand step 2
+                        }}
+                        type="button"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-4 rounded-xl border-0 cursor-pointer w-max shadow-sm"
+                      >
+                        Verify Visit
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex items-start gap-2">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 text-slate-400 mt-0.5">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                  </svg>
-                  <span>Visited the location and verified the address.</span>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Step 2: Capture Photo */}
             <div className="border border-[#edf1f5] rounded-[18px] bg-white shadow-sm overflow-hidden flex flex-col z-10 text-left">
               <div
-                onClick={() => onNavigate?.("capture-photo")}
-                className="flex items-center justify-between p-4 cursor-pointer"
+                onClick={() => {
+                  if (step2Enabled) {
+                    setExpandedStep((prev) => prev === 2 ? null : 2);
+                  }
+                }}
+                className={`flex items-center justify-between p-4 ${step2Enabled ? "cursor-pointer hover:bg-slate-50/50" : "cursor-not-allowed opacity-50 bg-slate-50/50"}`}
               >
                 <div className="flex items-center gap-3.5">
-                  <div className="w-5 h-5 rounded-full bg-[#ecfaef] text-[#088d27] flex items-center justify-center flex-none">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-3.5 h-3.5">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-none font-bold text-[10px] ${
+                    step2Completed 
+                      ? "bg-[#ecfaef] text-[#088d27]" 
+                      : !step2Enabled
+                        ? "bg-slate-100 text-slate-400"
+                        : "border border-slate-300 text-[#5c6a85]"
+                  }`}>
+                    {step2Completed ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-3.5 h-3.5">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    ) : !step2Enabled ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3 text-slate-400">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                      </svg>
+                    ) : (
+                      "2"
+                    )}
                   </div>
                   <span className="text-xs font-bold text-[#07183f]">2. Capture Customer Photo</span>
                 </div>
                 <div className="flex items-center gap-1.5">
-                  <span className="bg-[#ecfaef] text-[#088d27] font-bold text-[9px] px-2 py-0.5 rounded-full">
-                    Completed
+                  <span className={`font-bold text-[9px] px-2 py-0.5 rounded-full ${
+                    step2Completed ? "bg-[#ecfaef] text-[#088d27]" : "bg-[#edf2f7] text-[#5c6a85]"
+                  }`}>
+                    {step2Completed ? "Completed" : !step2Enabled ? "Locked" : "Pending"}
                   </span>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 text-[#088d27]">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedStep === 2 ? "rotate-180 text-[#1158d4]" : "text-slate-400"}`}>
                     <path d="m6 9 6 6 6-6" />
                   </svg>
                 </div>
               </div>
-              <div className="px-4 pb-4 pl-12 flex flex-col gap-2.5 text-xs text-[#5c6a85] border-t border-slate-50 pt-3 relative">
-                <div className="flex items-center gap-2">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 text-slate-400">
-                    <rect x="3" y="4" width="18" height="18" rx="2" />
-                    <line x1="16" y1="2" x2="16" y2="6" />
-                    <line x1="8" y1="2" x2="8" y2="6" />
-                    <line x1="3" y1="10" x2="21" y2="10" />
-                  </svg>
-                  <span>Completed at 10:28 AM, 16 May 2025</span>
-                </div>
-                
-                <div className="flex items-center gap-3.5 mt-1.5">
-                  <div className="grid w-14 h-14 place-items-center rounded-lg bg-slate-100 overflow-hidden border border-slate-200 text-[#1158d4]">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-6 h-6">
-                      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-                      <circle cx="12" cy="13" r="4" />
+              {expandedStep === 2 && step2Enabled && (
+                <div className="px-4 pb-4 pl-12 flex flex-col gap-2.5 text-xs text-[#5c6a85] border-t border-slate-50 pt-3 relative bg-white">
+                  <div className="flex items-center gap-2">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 text-slate-400">
+                      <rect x="3" y="4" width="18" height="18" rx="2" />
+                      <line x1="16" y1="2" x2="16" y2="6" />
+                      <line x1="8" y1="2" x2="8" y2="6" />
+                      <line x1="3" y1="10" x2="21" y2="10" />
                     </svg>
+                    <span>{step2Completed ? "Completed at 10:28 AM, 16 May 2025" : "No photo captured"}</span>
                   </div>
-                  <div className="text-left">
-                    <p className="m-0 text-xs font-bold text-[#1158d4]">{photoCount} Photo{photoCount === 1 ? "" : "s"} Captured</p>
-                    <p className="m-0 text-[10px] text-[#8f98a8] mt-0.5">Tap to capture or review</p>
+                  
+                  <div className="flex items-center gap-3.5 mt-1.5">
+                    <div className="grid w-14 h-14 place-items-center rounded-lg bg-slate-100 overflow-hidden border border-slate-200 text-[#1158d4]">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-6 h-6">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                        <circle cx="12" cy="13" r="4" />
+                      </svg>
+                    </div>
+                    <div className="text-left">
+                      <p className="m-0 text-xs font-bold text-[#1158d4]">{photoCount} Photo{photoCount === 1 ? "" : "s"} Captured</p>
+                      <button
+                        onClick={() => onNavigate?.("capture-photo")}
+                        type="button"
+                        className="mt-2 bg-[#1158d4] text-white font-bold text-[10px] px-3 py-1.5 rounded-lg border-0 cursor-pointer shadow-sm hover:bg-[#0f4ebc] transition"
+                      >
+                        {photoCount > 0 ? "Manage / Retake Photos" : "Open Camera"}
+                      </button>
+                    </div>
                   </div>
                 </div>
-
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4 text-slate-400 absolute right-4 bottom-8">
-                  <path d="m9 5 7 7-7 7" />
-                </svg>
-              </div>
+              )}
             </div>
 
             {/* Step 3: Verify Address */}
             <div className="border border-[#edf1f5] rounded-[18px] bg-[#fcfdfe] shadow-sm overflow-hidden flex flex-col z-10 text-left">
-              <div className="flex items-center justify-between p-4 cursor-pointer">
+              <div
+                onClick={() => {
+                  if (step3Enabled) {
+                    setExpandedStep((prev) => prev === 3 ? null : 3);
+                  }
+                }}
+                className={`flex items-center justify-between p-4 ${step3Enabled ? "cursor-pointer hover:bg-slate-50/50" : "cursor-not-allowed opacity-50 bg-slate-50/50"}`}
+              >
                 <div className="flex items-center gap-3.5">
-                  <div className="w-5 h-5 rounded-full bg-[#1158d4] text-white flex items-center justify-center flex-none font-bold text-[10px]">
-                    3
+                  <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-none font-bold text-[10px] ${
+                    step3Completed ? "bg-[#ecfaef] text-[#088d27]" : !step3Enabled ? "bg-slate-100 text-slate-400" : "border border-slate-300 text-[#5c6a85]"
+                  }`}>
+                    {step3Completed ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-3.5 h-3.5">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    ) : !step3Enabled ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3 text-slate-400">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                      </svg>
+                    ) : (
+                      "3"
+                    )}
                   </div>
-                  <span className="text-xs font-bold text-[#07183f]">3. Verify Address</span>
+                  <span className="text-xs font-bold text-[#07183f]">3. Product Questionnaire</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className={`font-bold text-[9px] px-2 py-0.5 rounded-full ${
-                    step3Completed ? "bg-[#ecfaef] text-[#088d27]" : "bg-[#edf5ff] text-[#1158d4]"
+                    step3Completed ? "bg-[#ecfaef] text-[#088d27]" : !step3Enabled ? "bg-slate-50/50 text-slate-400 border border-slate-200" : "bg-[#edf5ff] text-[#1158d4]"
                   }`}>
-                    {step3Completed ? "Completed" : "In Progress"}
+                    {step3Completed ? "Completed" : !step3Enabled ? "Locked" : "In Progress"}
                   </span>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 text-[#1158d4]">
-                    <path d="m18 15-6-6-6 6" />
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedStep === 3 ? "rotate-180 text-[#1158d4]" : "text-slate-400"}`}>
+                    <path d="m6 9 6 6 6-6" />
                   </svg>
                 </div>
               </div>
-              <div className="px-4 pb-4 pl-12 flex flex-col gap-3.5 text-xs text-[#5c6a85] border-t border-slate-100 pt-3 bg-white">
-                <p className="m-0 text-xs font-bold text-[#5c6a85]">
-                  Please verify the address details with the customer.
-                </p>
+              {expandedStep === 3 && (
+                <div className="px-4 pb-4 pl-12 flex flex-col gap-3.5 text-xs text-[#5c6a85] border-t border-slate-100 pt-3 bg-white">
+                  <p className="m-0 text-xs font-bold text-[#5c6a85]">
+                    Complete the questions configured for this loan product.
+                  </p>
 
-                {/* 1. Dynamic Verification Questionnaire */}
-                <div className="border border-slate-100 rounded-xl p-3 flex flex-col gap-3 bg-slate-50/50">
-                  <h4 className="text-[10px] font-bold text-[#07183f] uppercase tracking-wider m-0">Verification Questionnaire</h4>
-                  
-                  {/* Q1: Resides Verified */}
+                  <div className="border border-slate-100 rounded-xl p-3 bg-slate-50/50">
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <h4 className="m-0 text-[10px] font-bold uppercase text-[#07183f]">{assignedTask?.loanType ?? "Product"} Questionnaire</h4>
+                      <span className="text-[9px] font-bold text-[#62728b]">{questionnaire.length} questions</span>
+                    </div>
+                    <AssignedQuestionnaire
+                      answers={questionnaireAnswers}
+                      onChange={(questionId, value) => setQuestionnaireAnswers((current) => ({ ...current, [questionId]: value }))}
+                      questions={questionnaire}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-[#8f98a8]">Textual Remarks (Required)</label>
+                    <textarea
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value.slice(0, 250))}
+                      placeholder="Enter textual remarks here (minimum 5 characters)..."
+                      className="w-full h-20 p-2.5 border border-[#e2e8f0] rounded-xl outline-none focus:border-[#1158d4] text-xs font-bold placeholder-slate-400 bg-white"
+                    />
+                    <div className="flex justify-between items-center mt-1">
+                      {notes.trim().length > 0 && notes.trim().length < 5 ? (
+                        <span className="text-[9px] font-bold text-[#ee0f1a]">Must be at least 5 characters</span>
+                      ) : <span />}
+                      <span className="text-[9px] text-[#8f98a8]">{notes.length}/250</span>
+                    </div>
+                  </div>
+
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-[10px] font-bold text-[#8f98a8]">Does the customer reside at this address?</label>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {["Yes", "No", "Moved"].map((opt) => (
-                        <button
-                          key={opt}
-                          onClick={() => {
-                            setResidesVerified(opt);
-                            setStep3Completed(true);
-                            if (setCompletedStepsCount && completedStepsCount < 3) {
-                              setCompletedStepsCount(3);
-                            }
-                          }}
-                          type="button"
-                          className={`py-1.5 border rounded-lg text-[10px] font-bold transition-all cursor-pointer ${
-                            residesVerified === opt
-                              ? "bg-[#edf5ff] border-[#1158d4] text-[#1158d4]"
-                              : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
-                          }`}
-                        >
-                          {opt}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Q2: Home Ownership */}
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-[#8f98a8]">Home Ownership Type</label>
-                    <select
-                      value={homeOwnership}
-                      onChange={(e) => setHomeOwnership(e.target.value)}
-                      className="w-full h-8 px-2 border border-slate-200 rounded-lg text-[10px] font-bold text-[#07183f] outline-none focus:border-[#1158d4] bg-white cursor-pointer"
+                    <label className="text-[10px] font-bold text-[#8f98a8]">Address Proof Photo / Document (Optional)</label>
+                    <p className="m-0 text-[10px] text-[#8f98a8] leading-none">Add supporting photo of address (e.g., house number, name plate)</p>
+                    
+                    <label
+                      className="relative mt-1 border-2 border-dashed border-[#cbdbe5] rounded-xl p-4 bg-[#f8fafc] flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-slate-50 overflow-hidden"
                     >
-                      <option value="Owned">Owned</option>
-                      <option value="Rented">Rented</option>
-                      <option value="Parent's House">Parent's House</option>
-                      <option value="Company Provided">Company Provided</option>
-                    </select>
-                  </div>
-
-                  {/* Q3: Stay Duration */}
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-[#8f98a8]">Approximate Stay Duration</label>
-                    <select
-                      value={stayDuration}
-                      onChange={(e) => setStayDuration(e.target.value)}
-                      className="w-full h-8 px-2 border border-slate-200 rounded-lg text-[10px] font-bold text-[#07183f] outline-none focus:border-[#1158d4] bg-white cursor-pointer"
-                    >
-                      <option value="< 1 Year">&lt; 1 Year</option>
-                      <option value="1-3 Years">1-3 Years</option>
-                      <option value="3-5 Years">3-5 Years</option>
-                      <option value="5+ Years">5+ Years</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* 2. Voice Remarks */}
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold text-[#8f98a8]">Voice Remarks (Required)</label>
-                  
-                  {isRecording ? (
-                    /* Active Recording Panel */
-                    <div className="border border-red-200 rounded-xl p-3 bg-red-50/50 flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
-                        <span className="text-[11px] font-bold text-red-600">Recording...</span>
-                        <span className="text-[10px] font-bold text-slate-500">{formatDuration(recordingSeconds)}</span>
-                      </div>
-                      
-                      <button
-                        onClick={handleStopRecord}
-                        type="button"
-                        className="w-8 h-8 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center border-0 cursor-pointer shadow"
-                      >
-                        <span className="h-2.5 w-2.5 rounded-sm bg-white" />
-                      </button>
-                    </div>
-                  ) : voiceFile ? (
-                    /* Recorded File Player */
-                    <div className="border border-slate-200 rounded-xl p-3 bg-slate-50 flex flex-col gap-2">
-                      <audio
-                        ref={audioRef}
-                        className="hidden"
-                        onEnded={handleAudioEnded}
-                        onPause={() => setIsPlayingVoice(false)}
-                        onPlay={() => setIsPlayingVoice(true)}
-                        onTimeUpdate={handleAudioTimeUpdate}
-                        src={voiceFile.dataUrl}
+                      <input
+                        id="address-proof-file-input"
+                        accept="image/*,application/pdf,.pdf,.jpg,.jpeg,.png"
+                        className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                        onChange={(event) => {
+                          const input = event.currentTarget;
+                          setProofError("");
+                          void handleProofFile(input.files, () => {
+                            input.value = "";
+                          });
+                        }}
+                        type="file"
                       />
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-[#07183f] truncate max-w-[170px]">{voiceFile.name}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[9px] font-bold text-slate-400">{formatDuration(voiceFile.duration)}</span>
-                          <button
-                            onClick={handleDeleteVoice}
-                            type="button"
-                            className="text-red-500 hover:text-red-700 bg-transparent border-0 cursor-pointer"
-                          >
-                            {/* Trash icon */}
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5">
-                              <polyline points="3 6 5 6 21 6" />
-                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      {uploadedProof ? (
+                        <div className="flex items-center justify-between w-full z-10">
+                          <div className="flex items-center gap-2 text-[#088d27] font-bold text-xs">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-5 h-5">
+                              <polyline points="20 6 9 17 4 12" />
                             </svg>
+                            <span className="truncate max-w-[180px]">{uploadedProof.name}</span>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              void deleteCapturedAsset(uploadedProof.id, task.id);
+                              setUploadedProof(null);
+                            }}
+                            type="button"
+                            className="text-red-500 hover:text-red-700 bg-transparent border-0 cursor-pointer font-bold text-xs"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="w-6 h-6 text-[#1158d4]">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+                          </svg>
+                          <span className="font-bold text-xs text-[#1158d4]">Tap to upload proof</span>
+                          <span className="text-[9px] text-slate-400">JPG, PNG, PDF up to 5MB</span>
+                        </>
+                      )}
+                    </label>
+
+                    {/* Step 3 Inline Camera viewfinder */}
+                    {cameraActive && (
+                      <div className="relative flex flex-col gap-2 p-2.5 bg-slate-900 rounded-xl border border-slate-700 mb-2 text-left mt-2">
+                        <div className="flex items-center justify-between text-white text-[10px] font-bold px-0.5">
+                          <span>Address Proof Camera Viewfinder</span>
+                          <button
+                            onClick={stopInlineCamera}
+                            type="button"
+                            className="text-slate-400 hover:text-white bg-transparent border-0 cursor-pointer text-[10px]"
+                          >
+                            Close
+                          </button>
+                        </div>
+
+                        <div className="relative aspect-[4/3] w-full overflow-hidden rounded-lg bg-black border border-slate-800">
+                          <video
+                            ref={videoRef}
+                            autoPlay
+                            muted
+                            playsInline
+                            className={`h-full w-full object-cover ${cameraFacing === "user" ? "-scale-x-100" : ""} ${cameraStatus === "ready" ? "opacity-100" : "opacity-0"}`}
+                          />
+                          {cameraStatus !== "ready" && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white bg-slate-950">
+                              <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                              <span className="text-[9px] font-bold">Initializing...</span>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex justify-between items-center gap-2 mt-1">
+                          <button
+                            onClick={() => setCameraFacing((current) => (current === "environment" ? "user" : "environment"))}
+                            type="button"
+                            className="h-7 px-2.5 rounded-lg bg-slate-800 border-0 hover:bg-slate-750 text-white text-[9px] font-bold flex items-center gap-1 cursor-pointer"
+                          >
+                            Switch Camera
+                          </button>
+
+                          <button
+                            onClick={captureInlineProof}
+                            type="button"
+                            disabled={cameraStatus !== "ready" || isSaving}
+                            className="w-10 h-10 rounded-full border-2 border-white bg-[#1158d4] p-0.5 outline-none hover:scale-105 active:scale-95 cursor-pointer disabled:opacity-50 flex items-center justify-center"
+                            aria-label="Capture address proof"
+                          >
+                            <div className="w-full h-full rounded-full bg-white flex items-center justify-center text-[#1158d4]">
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 text-[#1158d4]" aria-hidden="true">
+                                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                                <circle cx="12" cy="13" r="4" />
+                              </svg>
+                            </div>
+                          </button>
+
+                          <button
+                            onClick={() => {
+                              stopInlineCamera();
+                              const uploadInput = document.getElementById("address-proof-file-input");
+                              uploadInput?.click();
+                            }}
+                            type="button"
+                            className="h-7 px-2.5 rounded-lg bg-slate-800 border-0 hover:bg-slate-750 text-white text-[9px] font-bold flex items-center gap-1 cursor-pointer"
+                          >
+                            Upload File
                           </button>
                         </div>
                       </div>
-
-                      {/* Playback Progress Slider */}
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={handleVoicePlayToggle}
-                          type="button"
-                          className="w-7 h-7 rounded-full bg-[#1158d4] text-white flex items-center justify-center border-0 cursor-pointer shadow-sm hover:scale-105"
-                        >
-                          {isPlayingVoice ? (
-                            /* Pause */
-                            <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3">
-                              <rect x="6" y="4" width="4" height="16" />
-                              <rect x="14" y="4" width="4" height="16" />
-                            </svg>
-                          ) : (
-                            /* Play */
-                            <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3 translate-x-[0.5px]">
-                              <path d="M8 5v14l11-7z" />
-                            </svg>
-                          )}
-                        </button>
-                        
-                        <div className="h-1 bg-slate-200 rounded-full flex-1 overflow-hidden">
-                          <div
-                            className="h-full bg-[#1158d4] transition-all duration-300"
-                            style={{ width: `${playbackProgress}%` }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={handleStartRecord}
-                      type="button"
-                      className="border border-[#cbdbe5] rounded-xl py-2 px-3 bg-white flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 text-xs font-bold text-[#1158d4] outline-none"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4 text-[#1158d4]">
-                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                        <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8" />
-                      </svg>
-                      <span>Record Voice Remarks</span>
-                    </button>
-                  )}
-                  {voiceError ? <p className="m-0 text-[10px] font-bold text-[#ee0f1a]">{voiceError}</p> : null}
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-bold text-[#8f98a8]">Notes (Optional)</label>
-                  <textarea
-                    value={notes}
-                    onChange={(e) => {
-                      setNotes(e.target.value.slice(0, 250));
-                      if (e.target.value.length > 5) {
-                        setStep3Completed(true);
-                      }
-                    }}
-                    placeholder="Enter notes here..."
-                    className="w-full h-20 p-2.5 border border-[#e2e8f0] rounded-xl outline-none focus:border-[#1158d4] text-xs font-bold placeholder-slate-400 bg-white"
-                  />
-                  <span className="text-[9px] text-[#8f98a8] text-right self-end mt-0.5">{notes.length}/250</span>
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold text-[#8f98a8]">Upload Proof (Optional)</label>
-                  <p className="m-0 text-[10px] text-[#8f98a8] leading-none">Add supporting photo of address (e.g., house number, name plate)</p>
-                  
-                  <label
-                    className="relative mt-1 border-2 border-dashed border-[#cbdbe5] rounded-xl p-4 bg-[#f8fafc] flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-slate-50 overflow-hidden"
-                  >
-                    <input
-                      accept="image/*,application/pdf"
-                      className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                      onChange={(event) => {
-                        const input = event.currentTarget;
-                        setProofError("");
-                        void handleProofFile(input.files, () => {
-                          input.value = "";
-                        });
-                      }}
-                      type="file"
-                    />
-                    {uploadedProof ? (
-                      <div className="flex items-center gap-2 text-[#088d27] font-bold text-xs">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-5 h-5">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                        <span className="truncate">{uploadedProof.name}</span>
-                      </div>
-                    ) : (
-                      <>
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="w-6 h-6 text-[#1158d4]">
-                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
-                        </svg>
-                        <span className="font-bold text-xs text-[#1158d4]">Tap to upload proof</span>
-                        <span className="text-[9px] text-slate-400">JPG, PNG, PDF up to 5MB</span>
-                      </>
                     )}
-                  </label>
-                  <button
-                    onClick={() => void handleSampleProof()}
-                    type="button"
-                    className="border border-[#d8e0eb] rounded-xl py-2 px-3 bg-white flex items-center justify-center gap-2 cursor-pointer hover:bg-slate-50 text-xs font-bold text-[#5c6a85] outline-none"
-                  >
-                    Use Sample Proof
-                  </button>
-                  {proofError ? <p className="m-0 text-[10px] font-bold text-[#ee0f1a]">{proofError}</p> : null}
+
+                    {!cameraActive && (
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        <button
+                          onClick={() => void startInlineCamera()}
+                          type="button"
+                          className="flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-[#1158d4] text-xs font-bold text-white border-0 hover:bg-[#0f4ebc] transition shadow-sm"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
+                            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                            <circle cx="12" cy="13" r="4" />
+                          </svg>
+                          Camera
+                        </button>
+                        <button
+                          onClick={() => {
+                            const uploadInput = document.getElementById("address-proof-file-input");
+                            uploadInput?.click();
+                          }}
+                          type="button"
+                          className="flex h-10 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-[#d8e0eb] bg-white text-xs font-bold text-[#1158d4] hover:bg-slate-50 transition shadow-sm"
+                        >
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="w-4 h-4">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+                          </svg>
+                          Upload
+                        </button>
+                      </div>
+                    )}
+                    {proofError ? <p className="m-0 text-[10px] font-bold text-[#ee0f1a]">{proofError}</p> : null}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Step 4: Capture Documents */}
             <div className="border border-[#edf1f5] rounded-[18px] bg-[#fcfdfe] shadow-sm overflow-hidden flex flex-col z-10 text-left">
               <div
-                onClick={() => onNavigate?.("capture-docs")}
-                className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50/50"
+                onClick={() => {
+                  if (step4Enabled) {
+                    setExpandedStep((prev) => prev === 4 ? null : 4);
+                  }
+                }}
+                className={`flex items-center justify-between p-4 ${step4Enabled ? "cursor-pointer hover:bg-slate-50/50" : "cursor-not-allowed opacity-50 bg-slate-50/50"}`}
               >
                 <div className="flex items-center gap-3.5">
                   <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-none font-bold text-[10px] ${
-                    documentCount > 0 || completedStepsCount >= 4 ? "bg-[#ecfaef] text-[#088d27]" : "border border-slate-300 text-[#5c6a85]"
+                    step4Completed ? "bg-[#ecfaef] text-[#088d27]" : !step4Enabled ? "bg-slate-100 text-slate-400" : "border border-slate-300 text-[#5c6a85]"
                   }`}>
-                    {documentCount > 0 || completedStepsCount >= 4 ? (
+                    {step4Completed ? (
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-3.5 h-3.5">
                         <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    ) : !step4Enabled ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3 text-slate-400">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                       </svg>
                     ) : (
                       "4"
@@ -675,30 +750,73 @@ export function AgentUpdateChecklist({
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className={`font-bold text-[9px] px-2 py-0.5 rounded-full ${
-                    documentCount > 0 || completedStepsCount >= 4 ? "bg-[#ecfaef] text-[#088d27]" : "bg-[#edf2f7] text-[#5c6a85]"
+                    step4Completed ? "bg-[#ecfaef] text-[#088d27]" : !step4Enabled ? "bg-slate-50/50 text-slate-400 border border-slate-200" : "bg-[#edf2f7] text-[#5c6a85]"
                   }`}>
-                    {documentCount > 0 ? `${documentCount} Files` : completedStepsCount >= 4 ? "Completed" : "Pending"}
+                    {documentCount > 0 ? `${documentCount} Files` : step4Completed ? "Completed" : !step4Enabled ? "Locked" : "Pending"}
                   </span>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 text-slate-400">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedStep === 4 ? "rotate-180 text-[#1158d4]" : "text-slate-400"}`}>
                     <path d="m6 9 6 6 6-6" />
                   </svg>
                 </div>
               </div>
+              {expandedStep === 4 && step4Enabled && (
+                <div className="px-4 pb-4 pl-12 flex flex-col gap-2.5 text-xs text-[#5c6a85] border-t border-slate-50 pt-3 bg-white">
+                  <div className="flex items-center gap-2">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 text-slate-400">
+                      <rect x="3" y="4" width="18" height="18" rx="2" />
+                      <line x1="16" y1="2" x2="16" y2="6" />
+                      <line x1="8" y1="2" x2="8" y2="6" />
+                      <line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                    <span>{step4Completed ? "Completed" : "No documents captured"}</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-3.5 mt-1.5">
+                    <div className="grid w-14 h-14 place-items-center rounded-lg bg-slate-100 overflow-hidden border border-slate-200 text-[#1158d4]">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-6 h-6">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                        <line x1="16" y1="13" x2="8" y2="13" />
+                        <line x1="16" y1="17" x2="8" y2="17" />
+                      </svg>
+                    </div>
+                    <div className="text-left">
+                      <p className="m-0 text-xs font-bold text-[#1158d4]">{documentCount} Document{documentCount === 1 ? "" : "s"} Captured</p>
+                      <button
+                        onClick={() => onNavigate?.("capture-docs")}
+                        type="button"
+                        className="mt-2 bg-[#1158d4] text-white font-bold text-[10px] px-3 py-1.5 rounded-lg border-0 cursor-pointer shadow-sm hover:bg-[#0f4ebc] transition"
+                      >
+                        {documentCount > 0 ? "Manage Documents" : "Upload / Scan Documents"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Step 5: Customer Signature */}
             <div className="border border-[#edf1f5] rounded-[18px] bg-[#fcfdfe] shadow-sm overflow-hidden flex flex-col z-10 text-left">
               <div
-                onClick={() => onNavigate?.("customer-signature")}
-                className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50/50"
+                onClick={() => {
+                  if (step5Enabled) {
+                    setExpandedStep((prev) => prev === 5 ? null : 5);
+                  }
+                }}
+                className={`flex items-center justify-between p-4 ${step5Enabled ? "cursor-pointer hover:bg-slate-50/50" : "cursor-not-allowed opacity-50 bg-slate-50/50"}`}
               >
                 <div className="flex items-center gap-3.5">
                   <div className={`w-5 h-5 rounded-full flex items-center justify-center flex-none font-bold text-[10px] ${
-                    signatureCount > 0 || completedStepsCount >= 5 ? "bg-[#ecfaef] text-[#088d27]" : "border border-slate-300 text-[#5c6a85]"
+                    step5Completed ? "bg-[#ecfaef] text-[#088d27]" : !step5Enabled ? "bg-slate-100 text-slate-400" : "border border-slate-300 text-[#5c6a85]"
                   }`}>
-                    {signatureCount > 0 || completedStepsCount >= 5 ? (
+                    {step5Completed ? (
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="w-3.5 h-3.5">
                         <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                    ) : !step5Enabled ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3 text-slate-400">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
                       </svg>
                     ) : (
                       "5"
@@ -708,15 +826,45 @@ export function AgentUpdateChecklist({
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className={`font-bold text-[9px] px-2 py-0.5 rounded-full ${
-                    signatureCount > 0 || completedStepsCount >= 5 ? "bg-[#ecfaef] text-[#088d27]" : "bg-[#edf2f7] text-[#5c6a85]"
+                    step5Completed ? "bg-[#ecfaef] text-[#088d27]" : !step5Enabled ? "bg-slate-50/50 text-slate-400 border border-slate-200" : "bg-[#edf2f7] text-[#5c6a85]"
                   }`}>
-                    {signatureCount > 0 ? "Captured" : completedStepsCount >= 5 ? "Completed" : "Pending"}
+                    {signatureCount > 0 ? "Captured" : step5Completed ? "Completed" : !step5Enabled ? "Locked" : "Pending"}
                   </span>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 text-slate-400">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={`w-3.5 h-3.5 transition-transform duration-200 ${expandedStep === 5 ? "rotate-180 text-[#1158d4]" : "text-slate-400"}`}>
                     <path d="m6 9 6 6 6-6" />
                   </svg>
                 </div>
               </div>
+              {expandedStep === 5 && step5Enabled && (
+                <div className="px-4 pb-4 pl-12 flex flex-col gap-2.5 text-xs text-[#5c6a85] border-t border-slate-50 pt-3 bg-white">
+                  <div className="flex items-center gap-2">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5 text-slate-400">
+                      <path d="M12 20h9" />
+                      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
+                    </svg>
+                    <span>{step5Completed ? "Completed" : "Pending customer signature"}</span>
+                  </div>
+                  
+                  <div className="flex items-center gap-3.5 mt-1.5">
+                    <div className="grid w-14 h-14 place-items-center rounded-lg bg-slate-100 overflow-hidden border border-slate-200 text-[#1158d4]">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-6 h-6">
+                        <path d="M12 20h9" />
+                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z" />
+                      </svg>
+                    </div>
+                    <div className="text-left">
+                      <p className="m-0 text-xs font-bold text-[#1158d4]">{signatureCount > 0 ? "Signature Captured" : "No Signature"}</p>
+                      <button
+                        onClick={() => onNavigate?.("customer-signature")}
+                        type="button"
+                        className="mt-2 bg-[#1158d4] text-white font-bold text-[10px] px-3 py-1.5 rounded-lg border-0 cursor-pointer shadow-sm hover:bg-[#0f4ebc] transition"
+                      >
+                        {signatureCount > 0 ? "Update Signature" : "Collect Signature"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
           </div>
@@ -724,6 +872,7 @@ export function AgentUpdateChecklist({
         </div>
 
         <footer className="flex-none border-t border-[#eef2f6] bg-white pt-3">
+          {submissionError ? <p className="mb-2 rounded-xl bg-[#fff0ef] px-3 py-2 text-[10px] font-bold text-[#ee0f1a]">{submissionError}</p> : null}
           <button
             onClick={handleSaveAndContinue}
             type="button"
@@ -734,7 +883,7 @@ export function AgentUpdateChecklist({
               <polyline points="17 21 17 13 7 13 7 21" />
               <polyline points="7 3 7 8 15 8" />
             </svg>
-            <span>Save & Continue</span>
+            <span>{completedCount >= 5 ? "Submit Investigation" : "Save Draft"}</span>
           </button>
         </footer>
 

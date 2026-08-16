@@ -7,9 +7,11 @@ import { FraudPage } from "../pages/FraudPage";
 import { LiveTrackingPage } from "../pages/LiveTrackingPage";
 import { QuestionnairePage } from "../pages/QuestionnairePage";
 import { RolesPage } from "../pages/RolesPage";
+import { CaseAssignmentPage } from "../pages/CaseAssignmentPage";
 
 export function AdminContent({ route }: { route: AdminRoute }) {
   if (route === "applications") return <ApplicationsPage />;
+  if (route === "case-assignment") return <CaseAssignmentPage />;
   if (route === "agents") return <AgentsPage />;
   if (route === "analytics") return <AnalyticsPage />;
   if (route === "fraud-alert") return <FraudPage />;

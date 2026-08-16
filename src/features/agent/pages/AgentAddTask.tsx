@@ -83,7 +83,6 @@ export function AgentAddTask({ onBack, onNavigate }: AgentAddTaskProps) {
     customer: "Rahul Sharma",
     mobile: "+91 98765 43210",
     address: "102, Sai Residency, Baner Road, Pune",
-    distance: "2.4 km",
     branch: "Pune West",
   });
   const [checklist, setChecklist] = useState(() => new Set(checklistItems));
@@ -111,7 +110,7 @@ export function AgentAddTask({ onBack, onNavigate }: AgentAddTaskProps) {
 
   const [isCreating, setIsCreating] = useState(false);
 
-  const createTask = () => {
+  const createTask = async () => {
     const digits = form.mobile.replace(/\D/g, "");
     if (!form.title.trim() || !form.customer.trim() || !form.address.trim() || digits.length < 10) {
       setError("Fill task title, customer, valid mobile number, and address.");
@@ -119,12 +118,15 @@ export function AgentAddTask({ onBack, onNavigate }: AgentAddTaskProps) {
     }
 
     setIsCreating(true);
-    window.setTimeout(() => {
-      setIsCreating(false);
-      const task = createAgentTask({ ...form, checklist: Array.from(checklist) });
-      setCreatedId(task.id);
+    try {
+      const task = await createAgentTask({ ...form, checklist: Array.from(checklist) });
+      setCreatedId(String(task));
       setError("");
-    }, 1000);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to create case.");
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   return (
@@ -175,10 +177,7 @@ export function AgentAddTask({ onBack, onNavigate }: AgentAddTaskProps) {
               <Field label="Customer name" name="customer" onChange={updateText} value={form.customer} />
               <Field label="Mobile number" name="mobile" onChange={updateText} value={form.mobile} />
               <Field label="Address" name="address" onChange={updateText} value={form.address} />
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Distance" name="distance" onChange={updateText} value={form.distance} />
-                <SelectField label="Branch" name="branch" onChange={updateText} options={["Pune West", "Pune Central", "Pune North"]} value={form.branch} />
-              </div>
+              <SelectField label="Branch" name="branch" onChange={updateText} options={["Pune West", "Pune Central", "Pune North"]} value={form.branch} />
             </div>
           </section>
 

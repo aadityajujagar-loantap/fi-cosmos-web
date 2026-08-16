@@ -1,4 +1,7 @@
 import { useEffect } from "react";
+import { hasUsableCoordinates } from "../utils/distance";
+import leafletJs from "leaflet/dist/leaflet.js?raw";
+import leafletCss from "leaflet/dist/leaflet.css?raw";
 
 interface OpenStreetMapProps {
   className?: string;
@@ -120,8 +123,8 @@ function buildLeafletHtml(options: {
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <style>${leafletCss}</style>
+  <script>${leafletJs}<\/script>
   <style>
     html, body { margin:0; padding:0; height:100%; width:100%; overflow:hidden; }
     #map { height:100%; width:100%; }
@@ -164,16 +167,39 @@ export function OpenStreetMap({
   userLocation,
   zoomSpan = 0.018,
 }: OpenStreetMapProps) {
-  const activeMarkers = markers.length
-    ? markers
-    : [{ id: "destination", label: destinationLabel, latitude, longitude, priority: "HIGH" as const }];
+  const fallbackLocation = hasUsableCoordinates({ latitude, longitude })
+    ? { latitude, longitude }
+    : { latitude: DEFAULT_LAT, longitude: DEFAULT_LNG };
+  const usableMarkers = markers.filter(hasUsableCoordinates);
+  const hasCoords = hasUsableCoordinates({ latitude, longitude });
+  const activeMarkers = usableMarkers.length
+    ? usableMarkers
+    : hasCoords
+      ? [{ id: "destination", label: destinationLabel, ...fallbackLocation, priority: "HIGH" as const }]
+      : [];
+
+  if (!hasCoords && !usableMarkers.length) {
+    return (
+      <div className={`relative overflow-hidden bg-[#dfeaf6] ${className} flex items-center justify-center`} aria-label="Map unavailable">
+        <div className="text-center px-4">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#7b8faa" strokeWidth="1.8" className="w-8 h-8 mx-auto mb-2 opacity-60">
+            <path d="M12 21s7-5.2 7-12a7 7 0 0 0-14 0c0 6.8 7 12 7 12Z" />
+            <circle cx="12" cy="9" r="2.5" />
+            <line x1="4" y1="4" x2="20" y2="20" strokeLinecap="round" />
+          </svg>
+          <p className="text-[11px] font-bold text-[#7b8faa]">No destination coordinates</p>
+          <p className="text-[10px] text-[#8b9ab0] mt-0.5">Set coordinates to enable map</p>
+        </div>
+      </div>
+    );
+  }
 
   const centerLat = selectedMarkerId
-    ? (activeMarkers.find((marker) => marker.id === selectedMarkerId)?.latitude ?? latitude)
-    : latitude;
+    ? (activeMarkers.find((marker) => marker.id === selectedMarkerId)?.latitude ?? fallbackLocation.latitude)
+    : fallbackLocation.latitude;
   const centerLng = selectedMarkerId
-    ? (activeMarkers.find((marker) => marker.id === selectedMarkerId)?.longitude ?? longitude)
-    : longitude;
+    ? (activeMarkers.find((marker) => marker.id === selectedMarkerId)?.longitude ?? fallbackLocation.longitude)
+    : fallbackLocation.longitude;
 
   const htmlContent = buildLeafletHtml({
     centerLat,

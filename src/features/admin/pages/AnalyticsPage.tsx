@@ -30,8 +30,8 @@ export function AnalyticsPage() {
             <option>Last 6 Months</option>
             <option>Current Quarter</option>
           </select>
-          <AdminButton>
-            Export PDF
+          <AdminButton onClick={() => window.print()}>
+            Print / Save PDF
           </AdminButton>
         </>
       }

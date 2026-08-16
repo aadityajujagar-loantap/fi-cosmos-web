@@ -1,12 +1,7 @@
+import { useAppData } from "../../../data/dataContext";
+import { selectAgentTasks } from "../../../domain/selectors";
 import type { Step, Tone, SummaryCard } from "../../../types";
 import { AgentProfileCard } from "../components/AgentProfileCard";
-
-const summaries: SummaryCard[] = [
-  { label: "Total Tasks", count: 18, icon: "clipboard", tone: "blue" },
-  { label: "In Progress", count: 5, icon: "hourglass", tone: "orange" },
-  { label: "Completed", count: 10, icon: "check", tone: "green" },
-  { label: "Pending", count: 3, icon: "alert", tone: "red" },
-];
 
 const toneStyles: Record<Tone, { accent: string; card: string; iconBg: string }> = {
   blue: {
@@ -41,13 +36,7 @@ const toneStyles: Record<Tone, { accent: string; card: string; iconBg: string }>
   },
 };
 
-function PlusIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.5" aria-hidden="true">
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
+
 
 function SummaryIcon({ icon }: { icon: SummaryCard["icon"] }) {
   if (icon === "hourglass") {
@@ -155,6 +144,14 @@ interface AgentProfileProps {
 }
 
 export function AgentProfile({ onNavigate, onLogout }: AgentProfileProps) {
+  const { state, agentId } = useAppData();
+  const tasks = selectAgentTasks(state, agentId ?? "");
+  const summaries: SummaryCard[] = [
+    { label: "Total Tasks", count: tasks.length, icon: "clipboard", tone: "blue" },
+    { label: "In Progress", count: tasks.filter((task) => task.status === "IN_PROGRESS" || task.status === "REWORK_REQUIRED").length, icon: "hourglass", tone: "orange" },
+    { label: "Completed", count: tasks.filter((task) => task.status === "COMPLETED").length, icon: "check", tone: "green" },
+    { label: "Assigned", count: tasks.filter((task) => task.status === "ASSIGNED" || task.status === "ACCEPTED").length, icon: "alert", tone: "red" },
+  ];
   return (
     <section className="relative flex flex-col flex-1 bg-white min-h-screen h-[100dvh] overflow-hidden animate-slide-up">
       <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-5 pt-4 pb-20 justify-start relative overflow-hidden">
@@ -337,13 +334,6 @@ export function AgentProfile({ onNavigate, onLogout }: AgentProfileProps) {
           >
             <NavIcon type="tasks" />
             <span className="text-[10px] font-medium leading-none">My Tasks</span>
-          </button>
-          
-          <button onClick={() => onNavigate?.("add-task")} type="button" className="flex flex-1 flex-col items-center justify-end relative h-full pb-1 text-[#70798d]">
-            <span className="absolute -top-5 grid h-12 w-12 place-items-center rounded-full bg-[#1158d4] text-white shadow-[0_6px_14px_rgba(19,91,215,0.3)] hover:scale-105 transition-transform duration-200 cursor-pointer">
-              <PlusIcon />
-            </span>
-            <span className="text-[10px] font-medium leading-none mt-auto">Add Task</span>
           </button>
           
           <button

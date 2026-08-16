@@ -1,210 +1,186 @@
-import { useState } from "react";
-import type { ChangeEvent } from "react";
-import { Card } from "../../../components/ui/Card";
-import { PhoneInput } from "../../../components/ui/Input";
+import { useState, useRef, type FormEvent, type KeyboardEvent, type ClipboardEvent } from "react";
 import { Button } from "../../../components/ui/Button";
+import { supabase } from "../../../lib/supabase";
 import agentLoginBg from "../../../assets/agent-login-bg.png";
 
-function LogoMark() {
-  return (
-    <div className="block w-[clamp(64px,18vw,80px)] h-[clamp(64px,18vw,80px)] mx-auto" aria-hidden="true">
-      <svg viewBox="0 0 100 100" className="w-full h-full">
-        {/* Circular Background */}
-        <circle cx="50" cy="50" r="44" fill="#e8f2ff" />
-        
-        {/* Left Green Swoosh */}
-        <path d="M 50,6 A 44,44 0 0,0 50,94" stroke="#34a853" strokeWidth="5.5" fill="none" strokeLinecap="round" />
-        {/* Right Blue Swoosh */}
-        <path d="M 50,94 A 44,44 0 0,0 50,6" stroke="#16469d" strokeWidth="5.5" fill="none" strokeLinecap="round" />
-        
-        {/* Worker Body (Polo Shirt) */}
-        <path d="M 28,84 C 28,68 38,59 50,59 C 62,59 72,68 72,84 Z" fill="#16469d" />
-        
-        {/* Collar */}
-        <path d="M 39,59 L 50,71 L 61,59 Z" fill="#102f6c" />
-        
-        {/* Neck */}
-        <rect x="46" y="50" width="8" height="11" fill="#fcd4b0" />
-        
-        {/* Head */}
-        <circle cx="50" cy="42" r="12" fill="#fcd4b0" />
-        
-        {/* Hair */}
-        <path d="M 38,42 C 38,34 42,30 50,30 C 58,30 62,34 62,42 Z" fill="#2d3748" />
-        
-        {/* Cap */}
-        <path d="M 38,38 C 38,28 44,26 50,26 C 56,26 62,38 62,38 Z" fill="#16469d" />
-        {/* Cap Visor */}
-        <path d="M 45,30 C 52,30 59,33 63,37 L 59,40 C 56,37 51,35 45,35 Z" fill="#102f6c" />
-        
-        {/* Face Features */}
-        <circle cx="46" cy="42" r="1.2" fill="#2d3748" />
-        <circle cx="54" cy="42" r="1.2" fill="#2d3748" />
-        <path d="M 47,46 Q 50,49 53,46" stroke="#2d3748" strokeWidth="1" fill="none" strokeLinecap="round" />
-        
-        {/* Clipboard (Green) */}
-        <rect x="42" y="56" width="16" height="23" rx="2" fill="#34a853" />
-        {/* Clipboard Clip */}
-        <rect x="47" y="53" width="6" height="4" rx="1" fill="#718096" />
-        {/* Paper on Clipboard */}
-        <rect x="45" y="59" width="10" height="18" rx="0.5" fill="#ffffff" />
-        {/* Writing on Paper */}
-        <line x1="47" y1="62" x2="53" y2="62" stroke="#a0aec0" strokeWidth="1.2" />
-        <line x1="47" y1="65" x2="53" y2="65" stroke="#a0aec0" strokeWidth="1.2" />
-        <line x1="47" y1="68" x2="51" y2="68" stroke="#a0aec0" strokeWidth="1.2" />
-        
-        {/* Hands holding Clipboard */}
-        <circle cx="39" cy="67" r="3.5" fill="#fcd4b0" />
-        <circle cx="61" cy="67" r="3.5" fill="#fcd4b0" />
-      </svg>
-    </div>
-  );
-}
-
 interface AgentLoginProps {
-  onSendOtp: (mobileNumber: string) => void;
+  // onLogin receives the looked-up email (not raw phone) + OTP
+  onLogin: (email: string, otp: string) => Promise<void>;
 }
 
-export function AgentLogin({ onSendOtp }: AgentLoginProps) {
-  const [mobileNumber, setMobileNumber] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+const OTP_LENGTH = 6;
 
-  const handleMobileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    setMobileNumber(e.target.value.replace(/\D/g, "").slice(0, 10));
+export function AgentLogin({ onLogin }: AgentLoginProps) {
+  const [step, setStep] = useState<"phone" | "otp">("phone");
+  const [phone, setPhone] = useState("");
+  const [agentEmail, setAgentEmail] = useState(""); // resolved from DB at step 1
+  const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(""));
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const otpRefs = useRef<Array<HTMLInputElement | null>>([]);
+
+  // ── Phone step ──────────────────────────────────────────────────────────────
+  const handlePhoneSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    setError("");
+    const digits = phone.replace(/\D/g, "");
+    if (digits.length < 10) { setError("Enter a valid 10-digit mobile number."); return; }
+
+    // Validate phone against agents DB right here at "Send OTP" step
+    setLoading(true);
+    try {
+      const { data: email, error: rpcError } = await supabase.rpc("lookup_agent_by_phone", { p_phone: digits });
+      if (rpcError) throw new Error("Verification failed. Check your connection and try again.");
+      if (!email) throw new Error("This mobile number is not registered. Contact your admin.");
+      setAgentEmail(email as string);
+      setStep("otp");
+      // auto-focus first OTP box after render
+      setTimeout(() => otpRefs.current[0]?.focus(), 50);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Verification failed.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleSubmit = () => {
-    if (mobileNumber.length < 10) return;
-    setIsLoading(true);
-    window.setTimeout(() => {
-      setIsLoading(false);
-      onSendOtp(mobileNumber);
-    }, 1000); // 1-second simulated delay
+  // ── OTP step ────────────────────────────────────────────────────────────────
+  const handleOtpChange = (index: number, value: string) => {
+    if (!/^\d?$/.test(value)) return;
+    const next = [...otp];
+    next[index] = value;
+    setOtp(next);
+    if (value && index < OTP_LENGTH - 1) otpRefs.current[index + 1]?.focus();
+  };
+
+  const handleOtpKeyDown = (index: number, event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Backspace" && !otp[index] && index > 0) {
+      otpRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleOtpPaste = (event: ClipboardEvent<HTMLInputElement>) => {
+    event.preventDefault();
+    const pasted = event.clipboardData.getData("text").replace(/\D/g, "").slice(0, OTP_LENGTH);
+    const next = [...otp];
+    pasted.split("").forEach((d, i) => { next[i] = d; });
+    setOtp(next);
+    otpRefs.current[Math.min(pasted.length, OTP_LENGTH - 1)]?.focus();
+  };
+
+  const handleOtpSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    const code = otp.join("");
+    if (code.length < OTP_LENGTH) { setError("Enter all 6 digits of the OTP."); return; }
+    setLoading(true); setError("");
+    try { await onLogin(agentEmail, code); }
+    catch (caught) { setError(caught instanceof Error ? caught.message : "Verification failed."); }
+    finally { setLoading(false); }
+  };
+
+  const handleBack = () => {
+    setStep("phone");
+    setOtp(Array(OTP_LENGTH).fill(""));
+    setAgentEmail("");
+    setError("");
   };
 
   return (
-    <section className="relative flex flex-col flex-1 bg-gradient-to-b from-white via-white via-[80%] to-[#eef8ff] min-h-screen h-[100dvh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] animate-fade-in">
-      <div className="w-full max-w-[430px] mx-auto flex flex-col flex-1 px-6 py-6 justify-between items-center relative min-h-screen">
-        {/* Top Section (Language & Brand Header) */}
-        <div className="w-full flex flex-col items-center flex-none relative z-20">
-          {/* Language Button */}
-          <div className="w-full flex justify-end relative z-30">
-            <button
-              className="flex items-center gap-2 h-10 px-4 border border-[#d5dbe5] rounded-[14px] bg-white/98 shadow-[0_4px_12px_rgba(10,25,48,0.1)] text-[#061332] text-sm font-bold cursor-pointer"
-              type="button"
-              aria-label="Change language"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="w-5 h-5 text-[#102f6c]"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <line x1="2" y1="12" x2="22" y2="12" />
-                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-              </svg>
-              <span data-language-label data-no-translate>English</span>
-              <svg viewBox="0 0 12 12" className="h-3 w-3 text-[#102f6c]" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" aria-hidden="true">
-                <path d="m3 4.5 3 3 3-3" />
-              </svg>
-            </button>
-          </div>
+    <section className="flex min-h-[100dvh] flex-1 overflow-y-auto bg-white">
+      <div className="mx-auto flex min-h-[100dvh] w-full max-w-[430px] flex-col justify-between px-6 py-7">
 
-          {/* Brand Header */}
-          <div className="mt-4 text-center relative z-20">
-            <LogoMark />
-            <h1 className="mt-2 text-[#16469d] text-4xl font-bold tracking-tight leading-none">
-              FieldOps
-            </h1>
-            <p className="mt-2 text-[#091733] text-base font-medium leading-tight">
-              Field Operations Made Simple
-            </p>
-            <span className="inline-flex items-center h-7 mt-2.5 bg-[#d9f0ce] text-[#479335] text-xs font-bold px-3.5 rounded-[11px]">
-              Agent App
-            </span>
-          </div>
-        </div>
+        {/* Header */}
+        <header className="text-center">
+          <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-[#e8f2ff] text-xl font-bold text-[#16469d]">FI</div>
+          <h1 className="mt-3 text-3xl font-bold text-[#16469d]">FieldOps</h1>
+          <p className="mt-2 text-sm font-medium text-[#243451]">Agent Platform</p>
+        </header>
 
-        {/* Center Illustration */}
-        <div className="w-full flex-1 flex items-center justify-center py-1 min-h-[140px] max-h-[260px] relative z-0">
-          <img
-            src={agentLoginBg}
-            alt="Field agent illustration"
-            className="w-[85%] max-w-[370px] max-h-full object-contain mx-auto mix-blend-multiply contrast-[1.02] brightness-[1.05]"
-          />
-        </div>
+        <img src={agentLoginBg} alt="Field agent" className="mx-auto my-5 max-h-64 w-[85%] object-contain mix-blend-multiply" />
 
-        {/* Bottom Group (Card & Footer) */}
-        <div className="w-full flex flex-col flex-none mt-4">
-          <Card className="w-full mt-0">
-            <h2 className="text-[#061332] text-lg font-bold leading-snug">
-              Login securely using OTP
-            </h2>
-            <p className="max-w-full w-[280px] mx-auto mt-2 mb-5 text-[#243451] text-sm font-normal leading-normal">
-              We will send you a One Time Password on your mobile number
-            </p>
+        {/* ── STEP 1: Phone number ─────────────────────────────────────────── */}
+        {step === "phone" && (
+          <form onSubmit={handlePhoneSubmit} className="rounded-[14px] border border-[#dfe7f2] bg-white p-5 shadow-lg">
+            <h2 className="text-lg font-bold text-[#061332]">Enter your mobile number</h2>
+            <p className="mb-5 mt-1 text-sm text-[#5c6a85]">We'll verify you're a registered field agent.</p>
 
-            <PhoneInput
-              inputMode="numeric"
-              maxLength={10}
-              onChange={handleMobileChange}
-              placeholder="Enter mobile number"
-              type="tel"
-              value={mobileNumber}
-            />
+            {error ? <p className="mb-3 rounded-xl bg-[#fff0ef] p-3 text-xs font-bold text-[#c62828]">{error}</p> : null}
 
-            <Button onClick={handleSubmit} className="mt-5 flex items-center justify-center gap-2">
-              {isLoading ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                  </svg>
-                  <span>Sending code...</span>
-                </>
-              ) : (
-                <span>Send OTP</span>
-              )}
-            </Button>
-          </Card>
-
-          {/* Bottom Section (Safe Note & Footer) */}
-          <div className="w-full flex flex-col items-center mt-5">
-            {/* Bottom Safe Note */}
-            <div className="flex items-center justify-center gap-2 text-[#243451]">
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="w-5 h-5 text-[#34a853]"
-              >
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                <polyline points="9 11 11 13 15 9" />
-              </svg>
-              <p className="text-sm font-medium">
-                Your data is safe and secure with us
-              </p>
+            <div className="flex items-center gap-2 rounded-xl border border-[#dfe7f2] bg-[#f7f9fc] px-4 h-12 focus-within:border-[#1158d4] focus-within:ring-2 focus-within:ring-[#1158d4]/20 transition-all">
+              <span className="text-sm font-semibold text-[#243451] shrink-0">🇮🇳 +91</span>
+              <div className="w-px h-5 bg-[#dfe7f2] shrink-0" />
+              <input
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
+                required
+                autoFocus
+                value={phone}
+                onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                placeholder="98765 43210"
+                className="flex-1 bg-transparent text-sm font-medium text-[#061332] outline-none placeholder:text-[#b0bac9]"
+              />
             </div>
 
-            {/* Footer Legal Links */}
-            <footer className="w-full flex items-center justify-center gap-5 mt-4">
-              <a href="#privacy" className="text-[#0a234f] text-sm font-medium hover:underline">
-                Privacy Policy
-              </a>
-              <span className="w-[1px] h-4 bg-[#a9b1c0]" />
-              <a href="#terms" className="text-[#0a234f] text-sm font-medium hover:underline">
-                Terms & Conditions
-              </a>
-            </footer>
-          </div>
-        </div>
+            <Button type="submit" disabled={loading} className="mt-5">
+              {loading ? "Checking..." : "Send OTP"}
+            </Button>
+          </form>
+        )}
+
+        {/* ── STEP 2: OTP entry ────────────────────────────────────────────── */}
+        {step === "otp" && (
+          <form onSubmit={handleOtpSubmit} className="rounded-[14px] border border-[#dfe7f2] bg-white p-5 shadow-lg">
+            <button
+              type="button"
+              onClick={handleBack}
+              className="mb-4 flex items-center gap-1.5 text-xs font-semibold text-[#1158d4] hover:opacity-70 transition-opacity"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5">
+                <path d="M19 12H5M12 5l-7 7 7 7" />
+              </svg>
+              Change number
+            </button>
+
+            <h2 className="text-lg font-bold text-[#061332]">Enter OTP</h2>
+            <p className="mb-1 mt-1 text-sm text-[#5c6a85]">
+              Sent to <span className="font-semibold text-[#243451]">+91 {phone}</span>
+            </p>
+
+            {error ? <p className="my-3 rounded-xl bg-[#fff0ef] p-3 text-xs font-bold text-[#c62828]">{error}</p> : <div className="mb-3" />}
+
+            <div className="flex justify-between gap-2" onPaste={handleOtpPaste}>
+              {otp.map((digit, i) => (
+                <input
+                  key={i}
+                  ref={(el) => { otpRefs.current[i] = el; }}
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={1}
+                  value={digit}
+                  onChange={(e) => handleOtpChange(i, e.target.value)}
+                  onKeyDown={(e) => handleOtpKeyDown(i, e)}
+                  className="h-12 w-full rounded-xl border border-[#dfe7f2] bg-[#f7f9fc] text-center text-lg font-bold text-[#061332] outline-none transition-all focus:border-[#1158d4] focus:ring-2 focus:ring-[#1158d4]/20"
+                />
+              ))}
+            </div>
+
+            <Button disabled={loading} className="mt-5" type="submit">
+              {loading ? "Verifying..." : "Verify & Sign In"}
+            </Button>
+
+            <button
+              type="button"
+              className="mt-4 w-full text-center text-xs font-semibold text-[#1158d4] hover:opacity-70 transition-opacity"
+              onClick={() => { setOtp(Array(OTP_LENGTH).fill("")); setError(""); setTimeout(() => otpRefs.current[0]?.focus(), 50); }}
+            >
+              Resend OTP
+            </button>
+          </form>
+        )}
+
+        <p className="mt-5 text-center text-xs font-medium text-[#5c6a85]">
+          Authenticated and protected by role-based access.
+        </p>
       </div>
     </section>
   );

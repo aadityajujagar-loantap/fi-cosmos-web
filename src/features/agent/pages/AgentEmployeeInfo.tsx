@@ -23,13 +23,7 @@ function InfoRow({ icon, label, value, iconColorClass = "text-[#1158d4]", iconBg
   );
 }
 
-function PlusIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.5" aria-hidden="true">
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
+
 
 function NavIcon({ type }: { type: "home" | "tasks" | "history" | "profile" }) {
   if (type === "tasks") {
@@ -339,13 +333,6 @@ export function AgentEmployeeInfo({ onBack, onNavigate }: AgentEmployeeInfoProps
           >
             <NavIcon type="tasks" />
             <span className="text-[10px] font-medium leading-none">My Tasks</span>
-          </button>
-          
-          <button onClick={() => onNavigate?.("add-task")} type="button" className="flex flex-1 flex-col items-center justify-end relative h-full pb-1 text-[#70798d]">
-            <span className="absolute -top-5 grid h-12 w-12 place-items-center rounded-full bg-[#1158d4] text-white shadow-[0_6px_14px_rgba(19,91,215,0.3)] hover:scale-105 transition-transform duration-200 cursor-pointer">
-              <PlusIcon />
-            </span>
-            <span className="text-[10px] font-medium leading-none mt-auto">Add Task</span>
           </button>
           
           <button onClick={() => onNavigate?.("history")} type="button" className="flex flex-1 flex-col items-center justify-center gap-1 text-[#70798d] hover:text-[#1158d4] cursor-pointer bg-transparent border-0">

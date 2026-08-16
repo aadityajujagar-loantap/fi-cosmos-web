@@ -151,7 +151,6 @@ export function AgentMenu({ onBack, onLogout, onNavigate }: AgentMenuProps) {
           <section className="mt-4 overflow-hidden rounded-[18px] border border-[#edf1f5] bg-white shadow-sm">
             <MenuItem onClick={() => onNavigate?.("home")} label="Dashboard" subtitle="Return to agent home" icon={<Icon type="home" />} />
             <MenuItem onClick={() => onNavigate?.("my-tasks")} label="My Tasks" subtitle="Assigned, pending and completed work" icon={<Icon type="tasks" />} />
-            <MenuItem onClick={() => onNavigate?.("add-task")} label="Add Task" subtitle="Create a new field visit request" icon={<Icon type="plus" />} accent="bg-[#eaf8ef] text-[#088d27]" />
             <MenuItem onClick={() => onNavigate?.("notifications")} label="Notifications" subtitle="Alerts and reminder settings" icon={<Icon type="bell" />} />
             <MenuItem onClick={() => onNavigate?.("location-map")} label="Location Map" subtitle="Track routes and nearby tasks" icon={<Icon type="map" />} />
             <MenuItem onClick={() => onNavigate?.("work-settings")} label="Work Settings" subtitle="Availability, routes and preferences" icon={<Icon type="briefcase" />} />

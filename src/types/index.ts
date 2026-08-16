@@ -1,4 +1,4 @@
-export type Step = "login" | "otp" | "home" | "menu" | "add-task" | "help-support" | "about" | "location-map" | "my-tasks" | "profile" | "personal-info" | "notifications" | "privacy-security" | "offline-data" | "employee-info" | "work-settings" | "history" | "task-details" | "task-in-progress" | "update-checklist" | "capture-photo" | "capture-docs" | "customer-signature";
+export type Step = "home" | "menu" | "add-task" | "help-support" | "about" | "location-map" | "my-tasks" | "profile" | "personal-info" | "notifications" | "privacy-security" | "offline-data" | "employee-info" | "work-settings" | "history" | "task-details" | "task-in-progress" | "update-checklist" | "capture-photo" | "capture-docs" | "customer-signature";
 
 export type Tone = "blue" | "orange" | "green" | "red" | "purple" | "cyan";
 

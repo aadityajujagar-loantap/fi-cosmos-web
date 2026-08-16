@@ -1,104 +1,33 @@
+import { evidenceService } from "../../../data/services";
+import { supabaseRepository } from "../../../data/repository";
 import { getActiveAgentTaskId } from "./tasks";
 
 export type CaptureKind = "photo" | "document" | "signature" | "voice";
-
 export interface CapturedAsset {
-  createdAt: string;
-  dataUrl: string;
-  id: string;
-  kind: CaptureKind;
-  mimeType: string;
-  name: string;
-  slot?: string;
-  size: number;
-  duration?: number;
+  createdAt: string; dataUrl: string; id: string; kind: CaptureKind; mimeType: string;
+  name: string; slot?: string; size: number; duration?: number;
 }
-
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
-
-function keyForTask(taskId = getActiveAgentTaskId()) {
-  return `agent-captures-${taskId}`;
-}
-
-function storageAvailable() {
-  return typeof window !== "undefined" && "localStorage" in window;
-}
+const previews = new Map<string, CapturedAsset>();
 
 export function loadCapturedAssets(taskId = getActiveAgentTaskId(), kind?: CaptureKind) {
-  if (!storageAvailable()) return [];
-
-  try {
-    const saved = JSON.parse(window.localStorage.getItem(keyForTask(taskId)) || "[]") as CapturedAsset[];
-    return kind ? saved.filter((asset) => asset.kind === kind) : saved;
-  } catch {
-    return [];
-  }
-}
-
-function saveCapturedAssets(assets: CapturedAsset[], taskId = getActiveAgentTaskId()) {
-  if (!storageAvailable()) return;
-  window.localStorage.setItem(keyForTask(taskId), JSON.stringify(assets.slice(0, 30)));
-}
-
-function blobToDataUrl(blob: Blob) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(new Error("Unable to read selected media."));
-    reader.readAsDataURL(blob);
+  const remote = supabaseRepository.getSnapshot().evidence.filter((item) => item.taskId === taskId).map((item): CapturedAsset => {
+    const [captureKind, slot] = (item.kind || "document").split(":", 2);
+    return { createdAt: item.createdAt, dataUrl: previews.get(item.id)?.dataUrl || item.signedUrl || "", id: item.id, kind: captureKind as CaptureKind, mimeType: item.mimeType, name: item.fileName, size: item.size, slot };
   });
+  return kind ? remote.filter((asset) => asset.kind === kind) : remote;
 }
 
-export async function addCapturedBlob(
-  blob: Blob,
-  options: { duration?: number; kind: CaptureKind; mimeType?: string; name?: string; slot?: string; taskId?: string },
-) {
-  if (blob.size > MAX_FILE_SIZE) {
-    throw new Error("File is larger than 5MB.");
-  }
-
+export async function addCapturedBlob(blob: Blob, options: { duration?: number; kind: CaptureKind; mimeType?: string; name?: string; slot?: string; taskId?: string }) {
+  if (blob.size > MAX_FILE_SIZE) throw new Error("File is larger than 5MB.");
   const taskId = options.taskId || getActiveAgentTaskId();
-  const asset: CapturedAsset = {
-    createdAt: new Date().toISOString(),
-    dataUrl: await blobToDataUrl(blob),
-    duration: options.duration,
-    id: `CAP-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    kind: options.kind,
-    mimeType: options.mimeType || blob.type || "application/octet-stream",
-    name: options.name || `${options.kind}-${Date.now()}`,
-    size: blob.size,
-    slot: options.slot,
-  };
-  const nextAssets = [asset, ...loadCapturedAssets(taskId)];
-  saveCapturedAssets(nextAssets, taskId);
+  const name = options.name || `${options.kind}-${Date.now()}`;
+  const normalizedBlob = blob.type ? blob : new Blob([blob], { type: options.mimeType || "application/octet-stream" });
+  const id = await evidenceService.upload(taskId, normalizedBlob, name, options.slot ? `${options.kind}:${options.slot}` : options.kind);
+  const asset: CapturedAsset = { createdAt: new Date().toISOString(), dataUrl: URL.createObjectURL(normalizedBlob), duration: options.duration, id, kind: options.kind, mimeType: normalizedBlob.type, name, size: blob.size, slot: options.slot };
+  previews.set(id, asset);
   return asset;
 }
-
-export async function addCapturedAsset(file: File, options: { kind: CaptureKind; slot?: string; taskId?: string }) {
-  return addCapturedBlob(file, {
-    ...options,
-    mimeType: file.type,
-    name: file.name || `${options.kind}-${Date.now()}`,
-  });
-}
-
-export function deleteCapturedAsset(assetId: string, taskId = getActiveAgentTaskId()) {
-  const nextAssets = loadCapturedAssets(taskId).filter((asset) => asset.id !== assetId);
-  saveCapturedAssets(nextAssets, taskId);
-  return nextAssets;
-}
-
-export function saveSignatureDataUrl(dataUrl: string, taskId = getActiveAgentTaskId()) {
-  const existing = loadCapturedAssets(taskId).filter((asset) => asset.kind !== "signature");
-  const signature: CapturedAsset = {
-    createdAt: new Date().toISOString(),
-    dataUrl,
-    id: `SIG-${Date.now()}`,
-    kind: "signature",
-    mimeType: "image/png",
-    name: "customer-signature.png",
-    size: dataUrl.length,
-  };
-  saveCapturedAssets([signature, ...existing], taskId);
-  return signature;
-}
+export async function addCapturedAsset(file: File, options: { kind: CaptureKind; slot?: string; taskId?: string }) { return addCapturedBlob(file, { ...options, mimeType: file.type, name: file.name || `${options.kind}-${Date.now()}` }); }
+export async function deleteCapturedAsset(assetId: string, taskId = getActiveAgentTaskId()) { await evidenceService.remove(assetId); previews.delete(assetId); return loadCapturedAssets(taskId); }
+export async function saveSignatureDataUrl(dataUrl: string, taskId = getActiveAgentTaskId()) { const response = await fetch(dataUrl); return addCapturedBlob(await response.blob(), { kind: "signature", name: "customer-signature.png", taskId }); }

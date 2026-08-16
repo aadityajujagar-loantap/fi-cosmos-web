@@ -1,8 +1,13 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useAppData } from "../../../data/dataContext";
+import { useAgentLocation } from "../location/agentLocationContext";
 import type { Step } from "../../../types";
 import { OpenStreetMap } from "../components/OpenStreetMap";
+import { hasUsableCoordinates } from "../utils/distance";
 import { routeUrl } from "../utils/map";
-import { getActiveAgentTask, updateAgentTask, type AgentTaskRecord } from "../utils/tasks";
+import { DEFAULT_USER_LOCATION, getActiveAgentTask, toAgentTask, updateAgentTask } from "../utils/tasks";
+import { loadCapturedAssets } from "../utils/media";
+import { investigationService } from "../../../data/services";
 
 interface ChecklistRowProps {
   label: string;
@@ -53,15 +58,39 @@ interface AgentTaskInProgressProps {
   completedStepsCount?: number;
 }
 
-export function AgentTaskInProgress({ onBack, onNavigate, completedStepsCount = 2 }: AgentTaskInProgressProps) {
-  const [task, setTask] = useState<AgentTaskRecord>(() => getActiveAgentTask());
+export function AgentTaskInProgress({ onBack, onNavigate, completedStepsCount = 0 }: AgentTaskInProgressProps) {
+  const { state } = useAppData();
+  const { accuracy, coordinates: agentLocation, status: locationStatus } = useAgentLocation();
+  const [taskId] = useState(() => getActiveAgentTask(agentLocation).id);
+  const task = useMemo(() => {
+    const current = state.tasks.find((item) => item.id === taskId);
+    return current ? toAgentTask(current, agentLocation) : getActiveAgentTask(agentLocation);
+  }, [agentLocation, state.tasks, taskId]);
+  const taskLocation = hasUsableCoordinates(task) ? task : DEFAULT_USER_LOCATION;
   // Start stopwatch at 5 minutes 24 seconds as shown in the picture
   const [seconds, setSeconds] = useState(5 * 60 + 24);
-  const [isCheckedIn, setIsCheckedIn] = useState(() => {
-    return localStorage.getItem(`task_checked_in_${getActiveAgentTask().id}`) === "true";
-  });
+  const [isCheckedIn, setIsCheckedIn] = useState(() => task.status === "In Progress");
   const [isCheckingIn, setIsCheckingIn] = useState(false);
   const [popupMsg, setPopupMsg] = useState("");
+
+  const photoCount = useMemo(() => loadCapturedAssets(task.id, "photo").length, [task.id, state.tasks]);
+  const documentCount = useMemo(() => loadCapturedAssets(task.id, "document").length, [task.id, state.tasks]);
+  const signatureCount = useMemo(() => loadCapturedAssets(task.id, "signature").length, [task.id, state.tasks]);
+  const draft = useMemo(() => investigationService.getDraft(task.id), [task.id, state.tasks]);
+
+  const isFinished = task.status === "Completed" || task.status === "Submitted";
+  const step1Completed = isFinished || draft.completedChecklistIds.includes("visit-location") || (completedStepsCount ?? 0) >= 1;
+  const step2Completed = isFinished || (step1Completed && (photoCount > 0 || (completedStepsCount ?? 0) >= 2));
+  const step3Completed = isFinished || (step2Completed && ((draft.residesVerified !== "" && draft.remarks.trim().length >= 5) || (completedStepsCount ?? 0) >= 3));
+  const step4Completed = isFinished || (step3Completed && (documentCount > 0 || (completedStepsCount ?? 0) >= 4));
+  const step5Completed = isFinished || (step4Completed && (signatureCount > 0 || (completedStepsCount ?? 0) >= 5));
+
+  const derivedCompletedCount =
+    (step1Completed ? 1 : 0) +
+    (step2Completed ? 1 : 0) +
+    (step3Completed ? 1 : 0) +
+    (step4Completed ? 1 : 0) +
+    (step5Completed ? 1 : 0);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -75,19 +104,10 @@ export function AgentTaskInProgress({ onBack, onNavigate, completedStepsCount = 
     setTimeout(() => {
       setIsCheckingIn(false);
       setIsCheckedIn(true);
-      localStorage.setItem(`task_checked_in_${task.id}`, "true");
-      const updated = updateAgentTask(task.id, { action: "filled", status: "In Progress" });
-      if (updated) setTask(updated);
+      void updateAgentTask(task.id, { action: "filled", status: "In Progress" });
       setPopupMsg("Check-In Successful! Geo-Fence Verified.");
       setTimeout(() => setPopupMsg(""), 2000);
     }, 1200);
-  };
-
-  const handleCompleteTask = () => {
-    const updated = updateAgentTask(task.id, { action: "outline", status: "Completed" });
-    if (updated) setTask(updated);
-    setPopupMsg("Task completed successfully.");
-    setTimeout(() => onNavigate?.("history"), 900);
   };
 
   const formatTime = (totalSec: number) => {
@@ -176,17 +196,18 @@ export function AgentTaskInProgress({ onBack, onNavigate, completedStepsCount = 
                   <circle cx="12" cy="12" r="10" />
                   <circle cx="12" cy="12" r="3" />
                 </svg>
-                <span>Accurate to 10 meters</span>
+                <span>{accuracy === null ? locationStatus : `Accurate to ${Math.round(accuracy)} meters`}</span>
               </div>
             </div>
 
             <OpenStreetMap
               className="h-[170px] w-full border-b border-[#edf1f5]"
               destinationLabel={task.address}
-              latitude={task.latitude}
-              longitude={task.longitude}
-              markers={[{ id: task.id, label: task.title, latitude: task.latitude, longitude: task.longitude, priority: task.priority }]}
+              latitude={taskLocation.latitude}
+              longitude={taskLocation.longitude}
+              markers={[{ id: task.id, label: task.title, latitude: taskLocation.latitude, longitude: taskLocation.longitude, priority: task.priority }]}
               selectedMarkerId={task.id}
+              userLocation={agentLocation ?? undefined}
               zoomSpan={0.012}
             />
 
@@ -201,23 +222,27 @@ export function AgentTaskInProgress({ onBack, onNavigate, completedStepsCount = 
                   {task.address}
                 </p>
               </div>
-              <button
-                onClick={() => window.open(routeUrl(task.latitude, task.longitude), "_blank", "noopener,noreferrer")}
-                type="button"
-                className="flex items-center gap-0.5 text-xs font-bold text-[#1158d4] cursor-pointer hover:underline bg-transparent border-0"
-              >
-                <span>Navigate</span>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3">
-                  <path d="m9 5 7 7-7 7" />
-                </svg>
-              </button>
+              <div className="flex flex-none flex-col items-end gap-1">
+                <span className="text-[9px] font-bold uppercase text-[#7b8faa]">Live distance</span>
+                <span className="text-sm font-bold text-[#07883a]">{task.distance}</span>
+                <button
+                  onClick={() => window.open(routeUrl(taskLocation.latitude, taskLocation.longitude), "_blank", "noopener,noreferrer")}
+                  type="button"
+                  className="flex items-center gap-0.5 text-xs font-bold text-[#1158d4] cursor-pointer hover:underline bg-transparent border-0"
+                >
+                  <span>Navigate</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3">
+                    <path d="m9 5 7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
 
           {/* Checklist Card */}
           <div className="border border-[#edf1f5] rounded-[18px] bg-white shadow-sm p-4 flex flex-col w-full flex-none text-left">
             <div className="flex items-center justify-between w-full border-b border-[#edf1f5] pb-3 mb-2">
-              <h3 className="text-xs font-bold text-[#07183f]">Checklist ({completedStepsCount}/5 Completed)</h3>
+              <h3 className="text-xs font-bold text-[#07183f]">Checklist ({derivedCompletedCount}/5 Completed)</h3>
               <button
                 onClick={() => onNavigate?.("update-checklist")}
                 type="button"
@@ -233,33 +258,33 @@ export function AgentTaskInProgress({ onBack, onNavigate, completedStepsCount = 
             <div className="flex flex-col">
               <ChecklistRow
                 label="Visit Customer Location"
-                completed={completedStepsCount >= 1}
-                statusText={completedStepsCount >= 1 ? "10:25 AM" : "Pending"}
-                isGreenStatus={completedStepsCount >= 1}
+                completed={step1Completed}
+                statusText={step1Completed ? "Completed" : "Pending"}
+                isGreenStatus={step1Completed}
               />
               <ChecklistRow
                 label="Capture Customer Photo"
-                completed={completedStepsCount >= 2}
-                statusText={completedStepsCount >= 2 ? "10:28 AM" : "Pending"}
-                isGreenStatus={completedStepsCount >= 2}
+                completed={step2Completed}
+                statusText={step2Completed ? "Completed" : "Pending"}
+                isGreenStatus={step2Completed}
               />
               <ChecklistRow
                 label="Verify Address"
-                completed={completedStepsCount >= 3}
-                statusText={completedStepsCount >= 3 ? "10:32 AM" : "Pending"}
-                isGreenStatus={completedStepsCount >= 3}
+                completed={step3Completed}
+                statusText={step3Completed ? "Completed" : "Pending"}
+                isGreenStatus={step3Completed}
               />
               <ChecklistRow
                 label="Capture Documents"
-                completed={completedStepsCount >= 4}
-                statusText={completedStepsCount >= 4 ? "10:38 AM" : "Pending"}
-                isGreenStatus={completedStepsCount >= 4}
+                completed={step4Completed}
+                statusText={step4Completed ? "Completed" : "Pending"}
+                isGreenStatus={step4Completed}
               />
               <ChecklistRow
                 label="Customer Signature"
-                completed={completedStepsCount >= 5}
-                statusText={completedStepsCount >= 5 ? "10:42 AM" : "Pending"}
-                isGreenStatus={completedStepsCount >= 5}
+                completed={step5Completed}
+                statusText={step5Completed ? "Completed" : "Pending"}
+                isGreenStatus={step5Completed}
               />
             </div>
           </div>
@@ -271,19 +296,19 @@ export function AgentTaskInProgress({ onBack, onNavigate, completedStepsCount = 
           <div className="flex items-center justify-between w-full p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-[10px] font-bold text-slate-600 mb-2 text-left">
             <span className="flex items-center gap-1.5">
               <span className={`w-2 h-2 rounded-full ${isCheckedIn ? "bg-emerald-500" : "bg-blue-500 animate-pulse"}`} />
-              <span>GPS: 3.2m accuracy</span>
+              <span>{accuracy === null ? locationStatus : `GPS: ${accuracy.toFixed(1)}m accuracy`}</span>
             </span>
             <span>{isCheckedIn ? "Check-In Verified" : "Within Check-In Range"}</span>
           </div>
 
           {isCheckedIn ? (
-            completedStepsCount >= task.checklist.length ? (
+            derivedCompletedCount >= task.checklist.length ? (
               <button
-                onClick={handleCompleteTask}
+                onClick={() => onNavigate?.("update-checklist")}
                 type="button"
                 className="w-full bg-[#088d27] text-white hover:bg-[#06751f] h-12 rounded-[14px] font-bold text-sm flex items-center justify-center gap-2 cursor-pointer shadow-lg hover:scale-[1.01] active:scale-[0.99] transition-transform border-0"
               >
-                <span>Complete Task</span>
+                <span>Review & Submit</span>
               </button>
             ) : (
               <button

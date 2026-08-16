@@ -37,7 +37,6 @@ export function AgentCapturePhoto({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
   const [triggerFlashAnimation, setTriggerFlashAnimation] = useState(false);
-  const uploadInputRef = useRef<HTMLInputElement>(null);
   const cameraFallbackInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -115,7 +114,6 @@ export function AgentCapturePhoto({
       setError(err instanceof Error ? err.message : "Unable to save photo.");
     } finally {
       setIsSaving(false);
-      if (uploadInputRef.current) uploadInputRef.current.value = "";
       if (cameraFallbackInputRef.current) cameraFallbackInputRef.current.value = "";
     }
   };
@@ -230,14 +228,7 @@ export function AgentCapturePhoto({
           onChange={(event) => void saveUploadedFiles(event.target.files)}
           type="file"
         />
-        <input
-          ref={uploadInputRef}
-          accept="image/*"
-          className="hidden"
-          multiple
-          onChange={(event) => void saveUploadedFiles(event.target.files)}
-          type="file"
-        />
+
 
         <div className="mt-2 flex min-h-0 w-full flex-1 flex-col gap-4 overflow-y-auto pb-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           <div className="flex w-full flex-none items-center gap-2.5 rounded-xl border border-[#d8e6ff] bg-[#f4f8ff] p-3 text-left">
@@ -301,18 +292,26 @@ export function AgentCapturePhoto({
           </div>
 
           <div className="flex w-full flex-none items-center justify-around py-2">
-            <button
-              onClick={() => uploadInputRef.current?.click()}
-              type="button"
+            <label
               className="flex cursor-pointer flex-col items-center justify-center gap-1.5 border-0 bg-transparent outline-none"
             >
+              <input
+                type="file"
+                className="hidden"
+                accept="image/*"
+                multiple
+                onChange={(e) => {
+                  void saveUploadedFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
               <div className="grid h-10 w-10 place-items-center rounded-full border border-[#cbd5e1] bg-[#edf5ff] text-[#1158d4] shadow-sm">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="h-4 w-4" aria-hidden="true">
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" />
                 </svg>
               </div>
               <span className="text-[10px] font-bold text-[#5c6a85]">Upload</span>
-            </button>
+            </label>
 
             <button
               onClick={() => void captureInlinePhoto()}

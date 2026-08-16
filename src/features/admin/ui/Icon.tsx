@@ -4,6 +4,14 @@ interface IconProps {
 }
 
 export function Icon({ name, className = "h-5 w-5" }: IconProps) {
+  if (name === "assignment") {
+    return (
+      <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2.2">
+        <rect x="3" y="4" width="12" height="16" rx="2" />
+        <path d="M7 8h4M7 12h4M7 16h3M18 8v8M15 13l3 3 3-3" />
+      </svg>
+    );
+  }
   if (name === "grid") {
     return (
       <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2.2">

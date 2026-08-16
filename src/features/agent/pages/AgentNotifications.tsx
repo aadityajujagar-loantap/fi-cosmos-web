@@ -1,6 +1,10 @@
 import { useState } from "react";
+import { useAppData } from "../../../data/dataContext";
+import { selectNotifications, selectUnreadCount } from "../../../domain/selectors";
+import { notificationService } from "../../../data/services";
 import type { Step } from "../../../types";
 import { AgentProfileCard } from "../components/AgentProfileCard";
+import { setActiveAgentTaskId } from "../utils/tasks";
 
 interface ToggleProps {
   checked: boolean;
@@ -87,13 +91,7 @@ function TypeRow({ icon, title, subtitle, statusText }: TypeRowProps) {
   );
 }
 
-function PlusIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.5" aria-hidden="true">
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
+
 
 function NavIcon({ type }: { type: "home" | "tasks" | "history" | "profile" }) {
   if (type === "tasks") {
@@ -136,6 +134,9 @@ interface AgentNotificationsProps {
 }
 
 export function AgentNotifications({ onBack, onNavigate }: AgentNotificationsProps) {
+  const { state, agentActor } = useAppData();
+  const notifications = selectNotifications(state, agentActor.id);
+  const unreadCount = selectUnreadCount(state, agentActor.id);
   const [prefEnabled, setPrefEnabled] = useState(true);
   const [inApp, setInApp] = useState(true);
   const [email, setEmail] = useState(true);
@@ -160,20 +161,7 @@ export function AgentNotifications({ onBack, onNavigate }: AgentNotificationsPro
           
           <h1 className="text-lg font-bold text-[#07183f]">Notifications</h1>
           
-          <button
-            type="button"
-            className="absolute right-0 flex items-center gap-1.5 h-8 px-3 border border-[#d5dbe5] rounded-[10px] bg-white text-xs font-bold text-[#061332] cursor-pointer"
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" className="w-4 h-4 text-[#102f6c]">
-              <circle cx="12" cy="12" r="10" />
-              <line x1="2" y1="12" x2="22" y2="12" />
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-            </svg>
-            <span data-language-label data-no-translate>English</span>
-            <svg viewBox="0 0 12 12" className="h-3 w-3 text-[#102f6c]" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" aria-hidden="true">
-              <path d="m3 4.5 3 3 3-3" />
-            </svg>
-          </button>
+          {unreadCount ? <button onClick={() => void notificationService.markAllRead(agentActor.id)} type="button" className="absolute right-0 h-8 rounded-[10px] border border-[#d5dbe5] bg-white px-3 text-[10px] font-bold text-[#1158d4]">Mark all read</button> : null}
         </header>
 
         {/* Scrollable container for Settings */}
@@ -181,6 +169,29 @@ export function AgentNotifications({ onBack, onNavigate }: AgentNotificationsPro
           
           {/* Profile Card */}
           <AgentProfileCard />
+
+          <div>
+            <div className="mb-2 flex items-center justify-between px-1"><h2 className="text-xs font-bold text-[#5c6a85]">Workflow Notifications</h2><span className="text-[10px] font-bold text-[#1158d4]">{unreadCount} unread</span></div>
+            <div className="overflow-hidden rounded-[18px] border border-[#edf1f5] bg-white shadow-sm">
+              {notifications.length ? notifications.map((notification) => (
+                <button
+                  key={notification.id}
+                  onClick={() => {
+                    void notificationService.markRead(agentActor.id, notification.id);
+                    if (notification.taskId) {
+                      setActiveAgentTaskId(notification.taskId);
+                      onNavigate?.("task-details");
+                    }
+                  }}
+                  type="button"
+                  className={`flex w-full items-start gap-3 border-b border-[#edf1f5] p-3 text-left last:border-b-0 ${notification.read ? "bg-white" : "bg-[#f4f8ff]"}`}
+                >
+                  <span className={`mt-1 h-2.5 w-2.5 flex-none rounded-full ${notification.read ? "bg-[#cbd5e1]" : "bg-[#1158d4]"}`} />
+                  <span className="min-w-0"><span className="block text-xs font-bold text-[#07183f]">{notification.title}</span><span className="mt-1 block text-[10px] leading-relaxed text-[#5c6a85]">{notification.message}</span><span className="mt-1 block text-[9px] font-bold text-[#8f98a8]">{new Date(notification.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</span></span>
+                </button>
+              )) : <p className="p-4 text-center text-xs font-semibold text-[#8f98a8]">No workflow notifications.</p>}
+            </div>
+          </div>
 
           {/* Section: Notification Preference */}
           <div>
@@ -363,13 +374,6 @@ export function AgentNotifications({ onBack, onNavigate }: AgentNotificationsPro
           >
             <NavIcon type="tasks" />
             <span className="text-[10px] font-medium leading-none">My Tasks</span>
-          </button>
-          
-          <button onClick={() => onNavigate?.("add-task")} type="button" className="flex flex-1 flex-col items-center justify-end relative h-full pb-1 text-[#70798d]">
-            <span className="absolute -top-5 grid h-12 w-12 place-items-center rounded-full bg-[#1158d4] text-white shadow-[0_6px_14px_rgba(19,91,215,0.3)] hover:scale-105 transition-transform duration-200 cursor-pointer">
-              <PlusIcon />
-            </span>
-            <span className="text-[10px] font-medium leading-none mt-auto">Add Task</span>
           </button>
           
           <button onClick={() => onNavigate?.("history")} type="button" className="flex flex-1 flex-col items-center justify-center gap-1 text-[#70798d] hover:text-[#1158d4] cursor-pointer bg-transparent border-0">

@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
+import { useAppData } from "../../../data/dataContext";
+import { useAgentLocation } from "../location/agentLocationContext";
+import { isTaskOverdue } from "../../../domain/selectors";
 import type { Tone, SummaryCard, Task, Step } from "../../../types";
 import {
-  deleteAgentTask,
   isTerminalStatus,
-  loadAgentTasks,
   setActiveAgentTaskId,
+  toAgentTasks,
   updateAgentTask,
   type AgentTaskRecord,
   type AgentTaskStatus,
@@ -65,10 +67,13 @@ const priorityStyles: Record<Task["priority"], string> = {
   LOW: "bg-[#f0fff4] text-[#088d27]",
 };
 
-const statusStyles = {
+const statusStyles: Record<AgentTaskStatus, string> = {
+  Assigned: "bg-[#edf4ff] text-[#1158d4]",
+  Accepted: "bg-[#edf4ff] text-[#1158d4]",
   Completed: "bg-[#ecfaef] text-[#088d27]",
   "In Progress": "bg-[#fff2e4] text-[#e58000]",
-  Pending: "bg-[#f3f4f6] text-[#5c6a85]",
+  Submitted: "bg-[#f2efff] text-[#7224e9]",
+  "Rework Required": "bg-[#fff8eb] text-[#e58000]",
   Rejected: "bg-[#fff0ef] text-[#ee0f1a]",
   Cancelled: "bg-[#edf2f7] text-[#5c6a85]",
 };
@@ -99,13 +104,7 @@ function ChevronRight() {
   );
 }
 
-function PlusIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="2.5" aria-hidden="true">
-      <path d="M12 5v14M5 12h14" />
-    </svg>
-  );
-}
+
 
 function SummaryIcon({ icon }: { icon: SummaryCard["icon"] }) {
   if (icon === "hourglass") {
@@ -230,9 +229,11 @@ interface AgentMyTasksProps {
 }
 
 export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
-  const [activeTab, setActiveTab] = useState<"today" | "upcoming" | "overdue">("today");
+  const { state } = useAppData();
+  const { coordinates: agentLocation } = useAgentLocation();
+  const [activeTab, setActiveTab] = useState<"all" | "today" | "upcoming" | "overdue">("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [tasks, setTasks] = useState<TaskWithStatus[]>(() => loadAgentTasks());
+  const tasks = useMemo<TaskWithStatus[]>(() => toAgentTasks(state.tasks, agentLocation), [agentLocation, state.tasks]);
   const [showFilters, setShowFilters] = useState(false);
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("All");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
@@ -243,8 +244,8 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
     return [
       { label: "Total Tasks", count: tasks.length, icon: "clipboard", tone: "blue" },
       { label: "In Progress", count: countByStatus("In Progress"), icon: "hourglass", tone: "orange" },
-      { label: "Completed", count: countByStatus("Completed"), icon: "check", tone: "green" },
-      { label: "Pending", count: countByStatus("Pending"), icon: "alert", tone: "red" },
+      { label: "Completed", count: tasks.filter((t) => t.status === "Completed" || t.status === "Submitted").length, icon: "check", tone: "green" },
+      { label: "Assigned", count: countByStatus("Assigned"), icon: "alert", tone: "red" },
     ];
   }, [tasks]);
 
@@ -257,38 +258,48 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
         const searchable = `${task.title} ${task.customer} ${task.id} ${task.location} ${task.address}`.toLowerCase();
         const matchesSearch = !normalizedQuery || searchable.includes(normalizedQuery);
         const matchesPriority = priorityFilter === "All" || task.priority === priorityFilter;
-        const matchesStatus = statusFilter === "All" || task.status === statusFilter;
+        
+        const matchesStatus = statusFilter === "All"
+          ? true
+          : statusFilter === "Completed"
+            ? (task.status === "Completed" || task.status === "Submitted")
+            : task.status === statusFilter;
 
         if (!matchesSearch || !matchesPriority || !matchesStatus) return false;
-        if (activeTab === "today") return task.date === "Today" && !isTerminalStatus(task.status);
-        if (activeTab === "upcoming") return task.date !== "Today" && !isTerminalStatus(task.status);
-        return isTerminalStatus(task.status);
+        const domainTask = state.tasks.find((item) => item.id === task.id);
+        if (activeTab === "all") return true;
+        
+        // If explicitly filtering for completed tasks, bypass terminal filter check
+        if (statusFilter === "Completed") {
+          if (activeTab === "today") return task.date === "Today";
+          if (activeTab === "upcoming") return task.date !== "Today";
+          return false; // Completed tasks are never overdue
+        }
+
+        if (activeTab === "today") return task.date === "Today" && !isTerminalStatus(task.status) && task.status !== "Submitted" && Boolean(domainTask && !isTaskOverdue(domainTask));
+        if (activeTab === "upcoming") return task.date !== "Today" && !isTerminalStatus(task.status) && task.status !== "Submitted" && Boolean(domainTask && !isTaskOverdue(domainTask));
+        return Boolean(domainTask && isTaskOverdue(domainTask));
       })
       .sort((first, second) => {
         if (sortMode === "distance") return first.distanceValue - second.distanceValue;
         if (sortMode === "priority") return priorityRank[first.priority] - priorityRank[second.priority];
         return first.slot.localeCompare(second.slot);
       });
-  }, [activeTab, priorityFilter, searchQuery, sortMode, statusFilter, tasks]);
+  }, [activeTab, priorityFilter, searchQuery, sortMode, state.tasks, statusFilter, tasks]);
 
   const selectTask = (task: TaskWithStatus, step: Step = "task-details") => {
     setActiveAgentTaskId(task.id);
     onNavigate?.(step);
   };
 
-  const updateStatus = (task: TaskWithStatus, status: AgentTaskStatus) => {
-    const updated = updateAgentTask(task.id, {
+  const updateStatus = async (task: TaskWithStatus, status: AgentTaskStatus) => {
+    const updated = await updateAgentTask(task.id, {
       action: status === "In Progress" ? "filled" : "outline",
       status,
     });
     if (updated) {
-      setTasks((current) => current.map((item) => (item.id === updated.id ? updated : item)));
       setActiveAgentTaskId(updated.id);
     }
-  };
-
-  const removeTask = (id: string) => {
-    setTasks(deleteAgentTask(id));
   };
 
   return (
@@ -317,6 +328,14 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
 
         {/* Segmented Tabs Switcher */}
         <div className="flex bg-[#f3f4f6] p-1 rounded-xl w-full mt-4 flex-none">
+          <button
+            onClick={() => setActiveTab("all")}
+            className={`flex-1 py-2 text-xs font-bold rounded-lg cursor-pointer transition-all ${
+              activeTab === "all" ? "bg-white text-[#1158d4] shadow-sm" : "text-[#5c6a85]"
+            }`}
+          >
+            All
+          </button>
           <button
             onClick={() => setActiveTab("today")}
             className={`flex-1 py-2 text-xs font-bold rounded-lg cursor-pointer transition-all ${
@@ -389,7 +408,7 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
                   onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
                   className="h-10 w-full rounded-xl border border-[#d8e0eb] bg-white px-3 text-xs font-bold text-[#07183f] outline-none"
                 >
-                  {(["All", "Pending", "In Progress", "Completed", "Rejected", "Cancelled"] as StatusFilter[]).map((status) => (
+                  {(["All", "Assigned", "Accepted", "In Progress", "Submitted", "Rework Required", "Completed", "Rejected", "Cancelled"] as StatusFilter[]).map((status) => (
                     <option key={status}>{status}</option>
                   ))}
                 </select>
@@ -451,7 +470,7 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
                 </strong>
                 <button
                   onClick={() => {
-                    setActiveTab(item.label === "Completed" ? "overdue" : "today");
+                    setActiveTab("all");
                     setStatusFilter(item.label === "Total Tasks" ? "All" : (item.label as StatusFilter));
                   }}
                   type="button"
@@ -469,7 +488,7 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
         {/* Today's Tasks Section Title */}
         <div className="flex items-center justify-between mt-4 w-full flex-none px-1">
           <h2 className="text-sm font-bold text-[#07183f]">
-            {activeTab === "today" ? "Today's Tasks" : activeTab === "upcoming" ? "Upcoming Tasks" : "Closed Tasks"} ({filteredTasks.length})
+            {activeTab === "all" ? "All Tasks" : activeTab === "today" ? "Today's Tasks" : activeTab === "upcoming" ? "Upcoming Tasks" : "Overdue Tasks"} ({filteredTasks.length})
           </h2>
           <button
             onClick={() => setSortMode((current) => (current === "time" ? "distance" : current === "distance" ? "priority" : "time"))}
@@ -535,8 +554,9 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
                         <button
                           onClick={(event) => {
                             event.stopPropagation();
-                            if (task.status === "Pending") updateStatus(task, "In Progress");
-                            selectTask(task, task.status === "Completed" || task.status === "Rejected" || task.status === "Cancelled" ? "task-details" : "task-in-progress");
+                            if (task.status === "Accepted" || task.status === "Rework Required") updateStatus(task, "In Progress");
+                            const opensProgress = task.status === "Accepted" || task.status === "Rework Required" || task.status === "In Progress";
+                            selectTask(task, opensProgress ? "task-in-progress" : "task-details");
                           }}
                           type="button"
                           className={
@@ -545,24 +565,11 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
                               : "border border-[#1158d4] text-[#1158d4] bg-white hover:bg-slate-50 text-[10px] font-bold px-2 py-1.5 rounded-md flex items-center justify-center w-[76px] cursor-pointer"
                           }
                         >
-                          <span>{task.status === "In Progress" ? "Continue" : task.status === "Pending" ? "Start Task" : "View"}</span>
+                          <span>{task.status === "In Progress" ? "Continue" : task.status === "Accepted" || task.status === "Rework Required" ? "Start Task" : "View"}</span>
                           {task.status === "In Progress" && <span className="text-[10px] font-bold">&gt;</span>}
                         </button>
                       </div>
                       
-                      <button
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          removeTask(task.id);
-                        }}
-                        type="button"
-                        aria-label={`Delete ${task.title}`}
-                        className="text-slate-400 hover:text-[#ee0f1a] cursor-pointer p-1 self-start mt-0.5 flex-none"
-                      >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
-                          <path d="M3 6h18M8 6V4h8v2M10 11v6M14 11v6M6 6l1 15h10l1-15" />
-                        </svg>
-                      </button>
                     </div>
                   </article>
               );
@@ -605,13 +612,6 @@ export function AgentMyTasks({ onNavigate }: AgentMyTasksProps) {
           <button type="button" className="flex flex-1 flex-col items-center justify-center gap-1 text-[#1158d4] cursor-pointer bg-transparent border-0">
             <NavIcon type="tasks" />
             <span className="text-[10px] font-bold leading-none">My Tasks</span>
-          </button>
-          
-          <button onClick={() => onNavigate?.("add-task")} type="button" className="flex flex-1 flex-col items-center justify-end relative h-full pb-1 text-[#70798d]">
-            <span className="absolute -top-5 grid h-12 w-12 place-items-center rounded-full bg-[#1158d4] text-white shadow-[0_6px_14px_rgba(19,91,215,0.3)] hover:scale-105 transition-transform duration-200 cursor-pointer">
-              <PlusIcon />
-            </span>
-            <span className="text-[10px] font-medium leading-none mt-auto">Add Task</span>
           </button>
           
           <button

@@ -1,12 +1,15 @@
 import { useMemo, useState } from "react";
+import { useAppData } from "../../../data/dataContext";
+import { hasUsableCoordinates } from "../../../domain/location";
+import { useAgentLocation } from "../location/agentLocationContext";
 import type { Step } from "../../../types";
 import { OpenStreetMap } from "../components/OpenStreetMap";
 import { routeUrl } from "../utils/map";
 import {
   DEFAULT_USER_LOCATION,
   isTerminalStatus,
-  loadAgentTasks,
   setActiveAgentTaskId,
+  toAgentTasks,
   type AgentTaskRecord,
   type LatLng,
 } from "../utils/tasks";
@@ -25,54 +28,35 @@ function priorityClass(priority: string) {
 }
 
 export function AgentLocationMap({ onBack, onNavigate }: AgentLocationMapProps) {
+  const { state } = useAppData();
+  const { coordinates: userLocation, requestLocation: refreshLocation, status: locationStatus } = useAgentLocation();
   const [activeFilter, setActiveFilter] = useState<MapFilter>("All");
-  const [tasks] = useState<AgentTaskRecord[]>(() => loadAgentTasks());
+  const tasks = useMemo<AgentTaskRecord[]>(() => toAgentTasks(state.tasks, userLocation), [state.tasks, userLocation]);
   const [draggedLocations, setDraggedLocations] = useState<Record<string, LatLng>>({});
-  const activeTasks = useMemo(() => tasks.filter((task) => !isTerminalStatus(task.status)), [tasks]);
+  const activeTasks = useMemo(() => tasks.filter((task) => !isTerminalStatus(task.status) && task.status !== "Submitted"), [tasks]);
   const [selectedTaskId, setSelectedTaskId] = useState(() => activeTasks[0]?.id || tasks[0]?.id || "");
   const [showLocationPrompt, setShowLocationPrompt] = useState(() => localStorage.getItem("agent-location-prompt-seen") !== "true");
-  const [userLocation, setUserLocation] = useState<LatLng | null>(null);
-  const [locationStatus, setLocationStatus] = useState("Allow location access to improve route start point.");
 
   const filteredTasks = useMemo(() => {
     if (activeFilter === "Nearby") return activeTasks.filter((task) => task.distanceValue <= 6);
     if (activeFilter === "High") return activeTasks.filter((task) => task.priority === "HIGH");
-    if (activeFilter === "Pending") return activeTasks.filter((task) => task.status === "Pending");
+    if (activeFilter === "Pending") return activeTasks.filter((task) => task.status === "Assigned" || task.status === "Accepted");
     return activeTasks;
   }, [activeFilter, activeTasks]);
 
   const selectedTask = filteredTasks.find((task) => task.id === selectedTaskId) || filteredTasks[0] || tasks[0];
-  const selectedLocation = selectedTask ? draggedLocations[selectedTask.id] || selectedTask : DEFAULT_USER_LOCATION;
+  const selectedLocationCandidate = selectedTask ? draggedLocations[selectedTask.id] || selectedTask : null;
+  const selectedLocation = hasUsableCoordinates(selectedLocationCandidate) ? selectedLocationCandidate : DEFAULT_USER_LOCATION;
 
   const requestLocation = () => {
     localStorage.setItem("agent-location-prompt-seen", "true");
     setShowLocationPrompt(false);
-
-    if (!navigator.geolocation) {
-      setLocationStatus("Location is unavailable in this browser. Showing Pune demo routes.");
-      return;
-    }
-
-    setLocationStatus("Fetching your current location...");
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setUserLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        });
-        setLocationStatus(`Live location enabled. Accuracy ${Math.round(position.coords.accuracy)} meters.`);
-      },
-      () => {
-        setLocationStatus("Location permission unavailable. Showing Pune demo routes.");
-      },
-      { enableHighAccuracy: true, maximumAge: 60000, timeout: 8000 },
-    );
+    refreshLocation();
   };
 
   const skipLocation = () => {
     localStorage.setItem("agent-location-prompt-seen", "true");
     setShowLocationPrompt(false);
-    setLocationStatus("Using Pune demo start point for routes.");
   };
 
   const openRoute = () => {
@@ -92,7 +76,7 @@ export function AgentLocationMap({ onBack, onNavigate }: AgentLocationMapProps) 
           <div className="w-full max-w-[360px] rounded-[22px] bg-white p-4 shadow-2xl">
             <h2 className="text-sm font-bold text-[#07183f]">Use current location?</h2>
             <p className="mt-2 text-xs font-medium leading-relaxed text-[#5c6a85]">
-              The map can use your device location as the route start point. Task pins will still show Pune demo locations.
+              The map can use your device location as the route start point. Task pins use the destination coordinates stored on each case.
             </p>
             <div className="mt-4 flex gap-3">
               <button onClick={skipLocation} type="button" className="h-11 flex-1 rounded-xl border border-[#d8e0eb] bg-white text-xs font-bold text-[#07183f]">
@@ -155,7 +139,7 @@ export function AgentLocationMap({ onBack, onNavigate }: AgentLocationMapProps) 
               setDraggedLocations((current) => ({ ...current, [id]: location }));
             }}
             selectedMarkerId={selectedTask?.id}
-            userLocation={userLocation || undefined}
+            userLocation={userLocation ?? undefined}
             zoomSpan={0.22}
           />
           <div className="absolute left-4 right-4 top-4 flex items-center justify-between rounded-2xl bg-white/95 px-4 py-3 shadow-sm">

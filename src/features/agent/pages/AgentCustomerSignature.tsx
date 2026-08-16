@@ -93,13 +93,13 @@ export function AgentCustomerSignature({
     if (hasSignature) updatePreview();
   };
 
-  const handleUseSignature = () => {
+  const handleUseSignature = async () => {
     const canvas = canvasRef.current;
     if (!canvas || !hasSignature) {
       setError("Please capture the customer's signature before continuing.");
       return;
     }
-    saveSignatureDataUrl(canvas.toDataURL("image/png"), task.id);
+    await saveSignatureDataUrl(canvas.toDataURL("image/png"), task.id);
     if (setCompletedStepsCount && completedStepsCount < 5) {
       setCompletedStepsCount(5);
     }

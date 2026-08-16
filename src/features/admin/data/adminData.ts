@@ -3,11 +3,12 @@ import type { AdminRouteItem, AgentRecord, ApplicationCase, FraudAlert, LiveAgen
 export const adminRoutes: AdminRouteItem[] = [
   { id: "dashboard", label: "Dashboard", icon: "grid" },
   { id: "applications", label: "Applications", icon: "file" },
+  { id: "case-assignment", label: "Case Assignment", icon: "assignment" },
   { id: "agents", label: "Agents", icon: "users" },
   { id: "analytics", label: "Analytics", icon: "bars" },
   { id: "fraud-alert", label: "Fraud Alert", icon: "shield" },
   { id: "live-tracking", label: "Live Tracking", icon: "map" },
-  { id: "questionnaire", label: "Questionnaire", icon: "clipboard" },
+  { id: "questionnaire", label: "Product Questions", icon: "clipboard" },
   { id: "roles-permissions", label: "Roles & Permissions", icon: "lock" },
 ];
 

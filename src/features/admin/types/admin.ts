@@ -1,6 +1,7 @@
 export type AdminRoute =
   | "dashboard"
   | "applications"
+  | "case-assignment"
   | "agents"
   | "analytics"
   | "fraud-alert"
